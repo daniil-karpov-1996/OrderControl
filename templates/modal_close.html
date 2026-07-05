@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ru">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title></title>
+  <style>
+    html,
+    body {
+      margin: 0;
+      background: transparent;
+      min-height: 0;
+    }
+  </style>
+  <script>
+    (function () {
+      try {
+        if (window.self === window.top) {
+          window.location.replace("/");
+          return;
+        }
+        if (!window.parent) return;
+        var p = window.location.pathname || "";
+        if (p !== "/modal/close" && !p.endsWith("/modal/close")) return;
+        var sp = new URLSearchParams(window.location.search || "");
+        if (sp.get("from_modal") !== "1") return;
+        var title = sp.get("toast_title");
+        var body = sp.get("toast_body");
+        if ((title || body) && window.parent.showToast) {
+          window.parent.showToast({
+            title: title || "",
+            body: body || "",
+            variant: sp.get("toast_variant") || "success",
+            timeoutMs: Number(sp.get("toast_timeout") || 10000) || 10000,
+            allowHtml: false
+          });
+        }
+        if (window.parent.closeEditModal) {
+          window.parent.closeEditModal({ instant: true });
+        }
+      } catch (_) { }
+    })();
+  </script>
+</head>
+
+<body></body>
+
+</html>

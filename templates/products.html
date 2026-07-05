@@ -1,0 +1,268 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page">
+
+  <div class="card">
+    <div class="page-head">
+      <h2>Товары</h2>
+    </div>
+
+    <form method="get" action="/products" style="display:flex; gap:10px; align-items:end; flex-wrap:wrap; margin-bottom:4px;">
+      <div style="min-width:160px; max-width:200px;">
+        <label>Категория</label>
+        <select name="category_id">
+          <option value="">Все категории</option>
+          {% for c in categories %}
+          <option value="{{ c['id'] }}" {% if str(c['id']) == str(selected_category_id or '') %}selected{% endif %}>
+            {{ c["name"] }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div style="min-width:160px; max-width:200px;">
+        <label>Подкатегория</label>
+        <select name="subcategory_id">
+          <option value="">Все подкатегории</option>
+          {% for s in subcategories %}
+          <option value="{{ s['id'] }}" {% if str(s['id']) == str(selected_subcategory_id or '') %}selected{% endif %}>
+            {{ s["name"] }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div style="flex:1; min-width:180px; max-width:320px;">
+        <label>Поиск</label>
+        <input name="q" placeholder="SKU, название…" value="{{ q or '' }}">
+      </div>
+      <input type="hidden" name="sort" value="{{ sort }}">
+      <input type="hidden" name="dir" value="{{ dir }}">
+      <input type="hidden" name="per_page" value="{{ per_page }}">
+      <input type="hidden" name="page" value="1">
+      <div style="display:flex; gap:6px;">
+        <button class="btn btn-primary btn-icon" type="submit" title="Найти">
+          <span class="material-icons-outlined">search</span>
+        </button>
+        {% if q or selected_category_id or selected_subcategory_id %}
+        <a class="btn btn-ghost btn-icon" href="/products?sort={{ sort }}&dir={{ dir }}&page=1&per_page={{ per_page }}"
+          title="Сбросить фильтры">
+          <span class="material-icons-outlined">close</span>
+        </a>
+        {% endif %}
+      </div>
+    </form>
+  </div>
+
+  {% if not is_viewer_role %}
+  <div class="card">
+    <div class="section-title">Добавить товар</div>
+
+    {% if error %}
+    <div class="error">{{ error }}</div>
+    {% endif %}
+
+    {% set f = form or {} %}
+    <form method="post" enctype="multipart/form-data" class="form-grid--3">
+      <div>
+        <label>Категория *</label>
+        <select name="category_id" id="productFormCategory" required>
+          <option value="">Выберите категорию</option>
+          {% for c in categories %}
+          <option value="{{ c['id'] }}">{{ c["name"] }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label>Подкатегория *</label>
+        <select name="subcategory_id" id="productFormSubcategory" required>
+          <option value="">Выберите подкатегорию</option>
+          {% for s in subcategories %}
+          <option value="{{ s['id'] }}" data-category-id="{{ s['category_id'] }}" {% if str(s['id']) == str(f.get('subcategory_id', '')) %}selected{% endif %}>
+            {{ s["name"] }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label>Название *</label>
+        <input name="name" placeholder="Название товара" required value="{{ f.get('name', '') }}">
+      </div>
+      <div>
+        <label>SKU (артикул)</label>
+        <input name="sku" placeholder="Необязательно" value="{{ f.get('sku', '') }}">
+      </div>
+      <div>
+        <label>Ед. измерения</label>
+        <input name="unit" placeholder="шт, кг, м…" value="{{ f.get('unit', 'шт') }}">
+      </div>
+      <div>
+        <label>Мин. остаток</label>
+        <input name="min_stock" type="number" step="0.01" min="0" value="{{ f.get('min_stock', 0) }}">
+      </div>
+      <div>
+        <label>Фото товара</label>
+        <input type="file" name="image" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp">
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" type="submit">
+          <span class="material-icons-outlined" style="font-size:16px;">add</span>
+          Добавить товар
+        </button>
+      </div>
+    </form>
+  </div>
+  {% endif %}
+
+  {% set query = q or "" %}
+  {% set cat_id = selected_category_id or "" %}
+  {% set sub_id = selected_subcategory_id or "" %}
+  {% set filter_qs = "" %}
+  {% if query %}{% set filter_qs = filter_qs ~ "&q=" ~ url_escape(query) %}{% endif %}
+  {% if cat_id %}{% set filter_qs = filter_qs ~ "&category_id=" ~ cat_id %}{% endif %}
+  {% if sub_id %}{% set filter_qs = filter_qs ~ "&subcategory_id=" ~ sub_id %}{% endif %}
+
+  {% set next_dir_created = "desc" if sort == "created" and dir == "asc" else "asc" %}
+  {% set next_dir_sku = "desc" if sort == "sku" and dir == "asc" else "asc" %}
+  {% set next_dir_name = "desc" if sort == "name" and dir == "asc" else "asc" %}
+  {% set next_dir_cat = "desc" if sort == "category" and dir == "asc" else "asc" %}
+  {% set next_dir_sub = "desc" if sort == "subcategory" and dir == "asc" else "asc" %}
+  {% set next_dir_stock = "desc" if sort == "stock" and dir == "asc" else "asc" %}
+
+  <div class="card">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 5%;">Фото</th>
+            <th style="width: 8%;">
+              <a class="sort" href="/products?sort=sku&dir={{ next_dir_sku }}&page=1&per_page={{ per_page }}{{ filter_qs }}">
+                SKU {% if sort == "sku" %}{% if dir == "asc" %}⬆{% else %}⬇{% endif %}{% else %}⇅{% endif %}
+              </a>
+            </th>
+            <th style="width: 20%;">
+              <a class="sort" href="/products?sort=name&dir={{ next_dir_name }}&page=1&per_page={{ per_page }}{{ filter_qs }}">
+                Название {% if sort == "name" %}{% if dir == "asc" %}⬆{% else %}⬇{% endif %}{% else %}⇅{% endif %}
+              </a>
+            </th>
+            <th style="width: 14%;">
+              <a class="sort" href="/products?sort=category&dir={{ next_dir_cat }}&page=1&per_page={{ per_page }}{{ filter_qs }}">
+                Категория {% if sort == "category" %}{% if dir == "asc" %}⬆{% else %}⬇{% endif %}{% else %}⇅{% endif %}
+              </a>
+            </th>
+            <th style="width: 14%;">
+              <a class="sort" href="/products?sort=subcategory&dir={{ next_dir_sub }}&page=1&per_page={{ per_page }}{{ filter_qs }}">
+                Подкатегория {% if sort == "subcategory" %}{% if dir == "asc" %}⬆{% else %}⬇{% endif %}{% else %}⇅{% endif %}
+              </a>
+            </th>
+            <th style="width: 7%;">Ед.</th>
+            <th class="right" style="width: 8%;">Мин.</th>
+            <th class="right" style="width: 10%;">
+              <a class="sort" href="/products?sort=stock&dir={{ next_dir_stock }}&page=1&per_page={{ per_page }}{{ filter_qs }}">
+                Остаток {% if sort == "stock" %}{% if dir == "asc" %}⬆{% else %}⬇{% endif %}{% else %}⇅{% endif %}
+              </a>
+            </th>
+            <th style="width: 5%;">-</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in products %}
+          <tr>
+            <td>
+              {% if p["image_path"] %}
+              <img src="{{ p['image_path'] }}" alt="" class="product-thumb">
+              {% else %}
+              <div class="product-thumb product-thumb--empty">—</div>
+              {% endif %}
+            </td>
+            <td>{{ p["sku"] or "-" }}</td>
+            <td><strong>{{ p["name"] }}</strong></td>
+            <td class="muted">{{ p["category_name"] or "-" }}</td>
+            <td class="muted">{{ p["subcategory_name"] or "-" }}</td>
+            <td>{{ p["unit"] or "шт" }}</td>
+            <td class="right">{{ fmt_qty(p["min_stock"]) }}</td>
+            <td class="right">
+              {% if p["balance"] < p["min_stock"] %}
+              <span class="negative">{{ fmt_qty(p["balance"]) }}</span>
+              {% else %}
+              {{ fmt_qty(p["balance"]) }}
+              {% endif %}
+            </td>
+            <td>
+              {% if not is_viewer_role %}
+              <a class="btn btn-edit btn-icon" href="/products/{{ p['id'] }}?from_modal=1" title="Изменить"
+                data-open-modal data-modal-title="Редактирование товара">
+                <span class="material-icons-outlined">edit</span>
+              </a>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+          {% if not products %}
+          <tr>
+            <td colspan="9" class="muted" style="text-align:center;padding:24px;">Товары не найдены</td>
+          </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if pages > 1 %}
+    <div class="pagination">
+      {% if page > 1 %}
+      <a class="btn btn-sm btn-ghost" href="/products?sort={{ sort }}&dir={{ dir }}&page={{ page - 1 }}&per_page={{ per_page }}{{ filter_qs }}">← Назад</a>
+      {% else %}
+      <span></span>
+      {% endif %}
+      <span class="muted">Стр. {{ page }} / {{ pages }}</span>
+      {% if page < pages %}
+      <a class="btn btn-sm btn-ghost" href="/products?sort={{ sort }}&dir={{ dir }}&page={{ page + 1 }}&per_page={{ per_page }}{{ filter_qs }}">Далее →</a>
+      {% else %}
+      <span></span>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+
+  <script>
+    (function () {
+      const cat = document.getElementById("productFormCategory");
+      const sub = document.getElementById("productFormSubcategory");
+      if (!cat || !sub) return;
+      function syncSubcategories() {
+        const cid = cat.value || "";
+        Array.from(sub.options).forEach(function (opt) {
+          if (!opt.value) return;
+          const ok = !cid || opt.getAttribute("data-category-id") === cid;
+          opt.hidden = !ok;
+          if (!ok && opt.selected) opt.selected = false;
+        });
+      }
+      cat.addEventListener("change", syncSubcategories);
+      syncSubcategories();
+    })();
+
+    (function () {
+      try {
+        if (window.self === window.top) return;
+        const url = new URL(window.location.href);
+        if (url.searchParams.get("from_modal") !== "1" || !window.parent) return;
+        const title = url.searchParams.get("toast_title");
+        const body = url.searchParams.get("toast_body");
+        if ((title || body) && window.parent.showToast) {
+          window.parent.showToast({
+            title: title || "",
+            body: body || "",
+            variant: url.searchParams.get("toast_variant") || "success",
+            timeoutMs: Number(url.searchParams.get("toast_timeout") || 10000) || 10000,
+            allowHtml: false,
+          });
+        }
+        if (window.parent.closeEditModal) {
+          window.parent.closeEditModal({ instant: true });
+        }
+      } catch (_) { }
+    })();
+  </script>
+
+</div>
+{% endblock %}

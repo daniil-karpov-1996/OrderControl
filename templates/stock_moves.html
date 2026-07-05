@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="page">
+
+  <div class="card">
+    <div class="page-head">
+      <h2>Журнал движений</h2>
+    </div>
+
+    <form method="get" action="/stock/moves" class="form-grid" style="margin-bottom:14px;">
+      <input type="hidden" name="page" value="1" />
+      <div>
+        <label>Дата с</label>
+        <input type="datetime-local" name="date_from" value="{{ date_from or '' }}" />
+      </div>
+      <div>
+        <label>Дата по</label>
+        <input type="datetime-local" name="date_to" value="{{ date_to or '' }}" />
+      </div>
+      <div>
+        <label>Товар</label>
+        <select name="product_id" class="ic-combobox">
+          <option value="">Все</option>
+          {% for p in products_list %}
+          <option value="{{ p['id'] }}" {% if str(p['id'])==str(filter_product_id or '') %}selected{% endif %}>
+            {{ p["name"] }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label>Клиент</label>
+        <select name="client_id" class="ic-combobox">
+          <option value="">Все</option>
+          {% for c in clients_list %}
+          <option value="{{ c['id'] }}" {% if str(c['id'])==str(filter_client_id or '') %}selected{% endif %}>
+            {{ c["full_name"] }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label>Тип</label>
+        <select name="move_type">
+          <option value="">Все</option>
+          <option value="in" {% if filter_move_type=='in' %}selected{% endif %}>Приход</option>
+          <option value="out" {% if filter_move_type=='out' %}selected{% endif %}>Отпуск</option>
+        </select>
+      </div>
+      <div>
+        <label>Поиск</label>
+        <input type="text" name="q" value="{{ q or '' }}" placeholder="Товар, SKU, клиент…" />
+      </div>
+      <div style="display:flex; gap:6px; align-self:end;">
+        <button type="submit" class="btn btn-primary btn-icon" title="Найти">
+          <span class="material-icons-outlined">search</span>
+        </button>
+        {% set has_filters = q or date_from or date_to or filter_product_id or filter_client_id or filter_move_type %}
+        {% if has_filters %}
+        <a class="btn btn-ghost btn-icon" href="/stock/moves" title="Сбросить">
+          <span class="material-icons-outlined">close</span>
+        </a>
+        {% endif %}
+      </div>
+    </form>
+
+    {% if has_filters %}
+    <div class="muted" style="margin-bottom:10px; font-size:13px;">
+      Фильтры:
+      {% if q %}<span class="chip">поиск: {{ q }}</span>{% endif %}
+      {% if filter_move_type %}<span class="chip">тип: {{ 'Приход' if filter_move_type == 'in' else 'Отпуск' }}</span>{% endif %}
+      {% if filter_product_id %}<span class="chip">товар</span>{% endif %}
+      {% if filter_client_id %}<span class="chip">клиент</span>{% endif %}
+      {% if date_from %}<span class="chip">с {{ date_from }}</span>{% endif %}
+      {% if date_to %}<span class="chip">по {{ date_to }}</span>{% endif %}
+    </div>
+    {% endif %}
+
+    {% set next_dir_created = "desc" if sort == "created" and dir == "asc" else "asc" %}
+    {% set next_dir_product = "desc" if sort == "product" and dir == "asc" else "asc" %}
+    {% set next_dir_qty = "desc" if sort == "qty" and dir == "asc" else "asc" %}
+
+    {% set filter_qs = "" %}
+    {% if q %}{% set filter_qs = filter_qs ~ "&q=" ~ url_escape(q) %}{% endif %}
+    {% if date_from %}{% set filter_qs = filter_qs ~ "&date_from=" ~ date_from %}{% endif %}
+    {% if date_to %}{% set filter_qs = filter_qs ~ "&date_to=" ~ date_to %}{% endif %}
+    {% if filter_product_id %}{% set filter_qs = filter_qs ~ "&product_id=" ~ filter_product_id %}{% endif %}
+    {% if filter_client_id %}{% set filter_qs = filter_qs ~ "&client_id=" ~ filter_client_id %}{% endif %}
+    {% if filter_move_type %}{% set filter_qs = filter_qs ~ "&move_type=" ~ filter_move_type %}{% endif %}
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 13%;">
+              <a class="sort" href="/stock/moves?sort=created&dir={{ next_dir_created }}&page=1&per_page={{ per_page }}{{ filter_qs }}">
+                Дата {% if sort == "created" %}{% if dir == "asc" %}⬆{% else %}⬇{% endif %}{% else %}⇅{% endif %}
+              </a>
+            </th>
+            <th style="width: 8%;">Тип</th>
+            <th style="width: 17%;">
+              <a class="sort" href="/stock/moves?sort=product&dir={{ next_dir_product }}&page=1&per_page={{ per_page }}{{ filter_qs }}">
+                Товар {% if sort == "product" %}{% if dir == "asc" %}⬆{% else %}⬇{% endif %}{% else %}⇅{% endif %}
+              </a>
+            </th>
+            <th style="width: 10%;">SKU</th>
+            <th style="width: 14%;">Клиент</th>
+            <th class="right" style="width: 9%;">
+              <a class="sort" href="/stock/moves?sort=qty&dir={{ next_dir_qty }}&page=1&per_page={{ per_page }}{{ filter_qs }}">
+                Кол-во {% if sort == "qty" %}{% if dir == "asc" %}⬆{% else %}⬇{% endif %}{% else %}⇅{% endif %}
+              </a>
+            </th>
+            <th style="width: 16%;">Примечание</th>
+            <th style="width: 13%;">Автор</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for m in moves %}
+          <tr>
+            <td class="muted">{{ fmt_dt(m["created_at"]) }}</td>
+            <td>
+              {% if m["move_type"] == "in" %}
+              <span class="badge badge-positive">Приход</span>
+              {% else %}
+              <span class="badge badge-negative">Отпуск</span>
+              {% endif %}
+            </td>
+            <td><strong>{{ m["product_name"] or "-" }}</strong></td>
+            <td class="muted">{{ m["product_sku"] or "-" }}</td>
+            <td>{{ m["client_name"] or "-" }}</td>
+            <td class="right">{{ fmt_qty(m["qty"]) }}</td>
+            <td class="muted">{{ m["note"] or "-" }}</td>
+            <td class="muted">{{ m["admin_username"] or "-" }}</td>
+          </tr>
+          {% endfor %}
+          {% if not moves %}
+          <tr>
+            <td colspan="8" class="muted" style="text-align:center;padding:24px;">Нет движений</td>
+          </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if pages > 1 %}
+    <div class="pagination">
+      {% if page > 1 %}
+      <a class="btn btn-sm btn-ghost" href="/stock/moves?sort={{ sort }}&dir={{ dir }}&page={{ page - 1 }}&per_page={{ per_page }}{{ filter_qs }}">← Назад</a>
+      {% else %}
+      <span></span>
+      {% endif %}
+      <span class="muted">Стр. {{ page }} / {{ pages }}</span>
+      {% if page < pages %}
+      <a class="btn btn-sm btn-ghost" href="/stock/moves?sort={{ sort }}&dir={{ dir }}&page={{ page + 1 }}&per_page={{ per_page }}{{ filter_qs }}">Далее →</a>
+      {% else %}
+      <span></span>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+
+</div>
+
+{% endblock %}

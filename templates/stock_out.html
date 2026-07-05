@@ -1,0 +1,478 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="page">
+  <div class="card">
+    <div style="margin-bottom:6px;">
+      <a class="btn btn-sm btn-ghost" href="/stock/out/docs">
+        <span class="material-icons-outlined" style="font-size:16px;vertical-align:middle;">arrow_back</span>
+        К списку документов
+      </a>
+    </div>
+    <div class="page-head">
+      <div>
+        <h2 style="margin-bottom:2px;">Отпуск товара</h2>
+        {% if doc %}
+        <div class="muted">{{ doc["doc_no"] }} · <span class="chip {{ 'chip--success' if doc['status'] == 'posted' else 'chip--warning' }}">{{ "Черновик" if doc["status"] == "draft" else "Проведён" }}</span></div>
+        {% else %}
+        <div class="muted">Новый документ · № {{ next_doc_no or "OUT-00001" }}</div>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if error %}
+    <div class="error">{{ error }}</div>
+    {% endif %}
+
+    {% set is_posted = doc and doc["status"] == "posted" %}
+    {% set can_edit_posted = can_edit_posted|default(false) %}
+    {% set form_locked = is_posted and not can_edit_posted %}
+
+    <form method="post" id="stockOutDocForm">
+      {% if doc %}<input type="hidden" name="doc_id" value="{{ doc['id'] }}">{% endif %}
+      <input type="hidden" name="action" id="stockOutAction" value="{% if can_edit_posted %}update_posted{% else %}save_draft{% endif %}">
+
+      <div class="stockout-layout">
+
+        <aside class="stockout-panel" {% if form_locked %}style="opacity:0.5;pointer-events:none;"{% endif %}>
+          <h3 style="margin-bottom:8px;">Подбор товара</h3>
+          <div class="muted" id="stockOutCategoryHint" style="font-size:12px;margin-bottom:8px;">
+            В одном отпуске — товары только из одной категории.
+          </div>
+          <div style="margin-bottom:6px;">
+            <input id="stockOutSearch" placeholder="Поиск товара…" style="font-size:13px;">
+          </div>
+          <div class="form-grid--2" style="gap:8px; margin-bottom:6px;">
+            <div>
+              <select id="stockOutCategory" style="font-size:12px; padding:6px 8px;">
+                <option value="">Все категории</option>
+                {% for c in categories %}<option value="{{ c['id'] }}">{{ c["name"] }}</option>{% endfor %}
+              </select>
+            </div>
+            <div>
+              <select id="stockOutSubcategory" style="font-size:12px; padding:6px 8px;">
+                <option value="">Все подкат.</option>
+                {% for s in subcategories %}<option value="{{ s['id'] }}" data-category-id="{{ s['category_id'] }}">{{ s["name"] }}</option>{% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="stockout-pick-list" id="stockOutPickList">
+            {% for p in products %}
+            <div class="stockout-pick-item {% if not p['is_active'] %}stockout-pick-item--inactive{% endif %}" data-id="{{ p['id'] }}" data-category-id="{{ p['category_id'] }}" data-subcategory-id="{{ p['subcategory_id'] }}" data-unit="{{ p['unit'] or 'шт' }}" data-balance="{{ p['stock_balance'] }}"{% if p.get('limit_balance') is not none %} data-limit-balance="{{ p['limit_balance'] }}"{% endif %} data-name="{{ p['name'] }}" data-sku="{{ p['sku'] or '' }}" data-img="{{ p['image_path'] or '' }}">
+              {% if p['image_path'] %}
+              <img class="stockout-pick-item__img" src="{{ p['image_path'] }}" alt="">
+              {% else %}
+              <div class="stockout-pick-item__img stockout-pick-item__img--empty">
+                <span class="material-icons-outlined">inventory_2</span>
+              </div>
+              {% endif %}
+              <div class="stockout-pick-item__info">
+                <div class="stockout-pick-item__name">{{ p["name"] }}</div>
+                <div class="stockout-pick-item__meta">{{ p["sku"] or "—" }} · {{ p["unit"] or "шт" }}{% if not p['is_active'] %} · неактивен{% endif %}</div>
+              </div>
+              <div class="stockout-pick-item__balance">{{ fmt_qty(p["stock_balance"]) }}</div>
+            </div>
+            {% endfor %}
+            {% if not products %}
+            <div class="stockout-panel-hint">Нет товаров. Добавьте товар в разделе "Товары".</div>
+            {% endif %}
+          </div>
+          <div style="display:flex; gap:8px; align-items:end; margin-top:8px;">
+            <div style="flex:1;">
+              <label style="font-size:11px;">Кол-во</label>
+              <input id="stockOutQtyPick" type="number" step="0.01" min="0.01" value="1" style="padding:8px;">
+            </div>
+            <button class="btn btn-primary" type="button" id="stockOutAddItemBtn" style="white-space:nowrap;">
+              <span class="material-icons-outlined" style="font-size:16px;">add</span> Добавить
+            </button>
+          </div>
+        </aside>
+
+        <section class="stockout-main">
+          <div class="stockout-toolbar">
+            <div>
+              <label>Клиент</label>
+              <select name="client_id" class="ic-combobox" {% if form_locked %}disabled{% endif %}>
+                <option value="">Не выбран</option>
+                {% for c in clients %}
+                <option value="{{ c['id'] }}" {% if doc and str(c['id'])==str(doc.get('client_id','')) %}selected{% endif %}>{{ c["full_name"] }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div>
+              <label>Дата</label>
+              <input type="datetime-local" name="created_at" step="1" value="{{ (doc and dt_local_for_input(doc['created_at'])) or now_local }}" {% if form_locked %}readonly{% endif %}>
+            </div>
+            <div class="stockout-note">
+              <label>Примечание</label>
+              <input name="note" placeholder="Комментарий" value="{{ (doc and doc.get('note')) or '' }}" {% if form_locked %}readonly{% endif %}>
+            </div>
+          </div>
+
+          <div class="stockout-table-wrap">
+            <div class="stockout-table-head">
+              <h3>Позиции документа</h3>
+              <div class="muted" id="stockOutTotals">Позиций: 0 · Итого: 0</div>
+            </div>
+            <div class="table-wrap">
+              <table id="stockOutItemsTable" class="stockout-table">
+                <thead>
+                  <tr>
+                    <th>Товар</th>
+                    <th class="right" style="width:100px;">Остаток</th>
+                    <th class="right" style="width:120px;">Кол-во</th>
+                    <th style="width:60px;">Ед.</th>
+                    <th style="width:50px;"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for it in items or [] %}
+                  <tr data-category-id="{{ it['category_id'] }}">
+                    <td>
+                      {% if it.get("image_path") %}<img src="{{ it['image_path'] }}" class="stockout-item-row-img" alt="">{% endif %}
+                      {{ it["product_name"] }} <span class="muted">({{ it["sku"] or "-" }})</span>
+                      <input type="hidden" name="product_id[]" value="{{ it['product_id'] }}">
+                    </td>
+                    <td class="right stockout-balance-cell" data-balance="{% if it.get('stock_balance') is not none %}{{ it['stock_balance'] }}{% else %}0{% endif %}"{% if it.get('limit_balance') is not none %} data-limit-balance="{{ it['limit_balance'] }}"{% endif %} data-product-id="{{ it['product_id'] }}">{% if it.get('stock_balance') is not none %}{{ fmt_qty(it['stock_balance']) }}{% else %}—{% endif %}</td>
+                    <td class="right">
+                      <input name="qty[]" class="stockout-qty-input" type="number" min="0.01" step="0.01" value="{{ it['qty'] }}" {% if form_locked %}readonly{% endif %}>
+                    </td>
+                    <td>{{ it["unit"] or "шт" }}</td>
+                    <td>{% if not form_locked %}<button type="button" class="btn btn-icon btn-danger js-remove-line"><span class="material-icons-outlined">delete</span></button>{% endif %}</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {% if not is_viewer_role and not is_posted %}
+          <div class="stockout-actions">
+            <button class="btn btn-ghost" type="submit" id="saveDraftBtn">Сохранить черновик</button>
+            <button class="btn btn-primary" type="submit" id="postDocBtn">Провести</button>
+          </div>
+          {% elif can_edit_posted %}
+          <div class="stockout-actions">
+            <button class="btn btn-primary" type="submit" id="updatePostedBtn">Сохранить изменения</button>
+          </div>
+          <div class="muted" style="padding:4px 0;">Проведённый документ. Изменения пересчитают складские движения.</div>
+          {% elif is_posted %}
+          <div class="stockout-actions">
+            <div class="muted" style="padding:8px 0;">Документ проведён. Редактирование недоступно.</div>
+          </div>
+          {% endif %}
+        </section>
+
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+(function () {
+  var categorySel = document.getElementById("stockOutCategory");
+  var subcategorySel = document.getElementById("stockOutSubcategory");
+  var searchInput = document.getElementById("stockOutSearch");
+  var pickList = document.getElementById("stockOutPickList");
+  var qtyInput = document.getElementById("stockOutQtyPick");
+  var addBtn = document.getElementById("stockOutAddItemBtn");
+  var tbody = document.querySelector("#stockOutItemsTable tbody");
+  var totals = document.getElementById("stockOutTotals");
+  var actionInput = document.getElementById("stockOutAction");
+  var saveDraftBtn = document.getElementById("saveDraftBtn");
+  var postBtn = document.getElementById("postDocBtn");
+  var updatePostedBtn = document.getElementById("updatePostedBtn");
+  var canEditPosted = {{ can_edit_posted|default(false)|tojson }};
+  var docQtyByProduct = {{ doc_qty_by_product|default({})|tojson }};
+  var productCategoryMap = {{ product_category_map|default({})|tojson }};
+  var lockedCategoryId = {{ doc_category_id|tojson }};
+  if (lockedCategoryId !== null && lockedCategoryId !== undefined) {
+    lockedCategoryId = String(lockedCategoryId);
+  } else {
+    lockedCategoryId = null;
+  }
+  var categoryHint = document.getElementById("stockOutCategoryHint");
+  var formLocked = {{ form_locked|tojson }};
+  var formEl = document.getElementById("stockOutDocForm");
+  var balanceAdjust = function (pid, balance) {
+    var extra = Number((docQtyByProduct && (docQtyByProduct[String(pid)] || docQtyByProduct[pid])) || 0);
+    return Number(balance) + (Number.isFinite(extra) ? extra : 0);
+  };
+
+  var selectedItem = null;
+
+  function formatQty(v) {
+    var n = Number(v || 0);
+    if (!Number.isFinite(n)) return "0";
+    if (Math.round(n) === n) return String(Math.round(n));
+    return n.toFixed(2);
+  }
+
+  function rowProductId(tr) {
+    var inp = tr.querySelector('input[name="product_id[]"]');
+    return inp ? String(inp.value || "").trim() : "";
+  }
+
+  function rowCategoryId(tr) {
+    var fromAttr = tr.getAttribute("data-category-id");
+    if (fromAttr) return String(fromAttr);
+    var pid = rowProductId(tr);
+    if (!pid) return null;
+    var cid = productCategoryMap[pid] ?? productCategoryMap[Number(pid)];
+    return cid == null ? null : String(cid);
+  }
+
+  function syncLockedCategory() {
+    if (formLocked) return;
+    lockedCategoryId = null;
+    Array.from(tbody.querySelectorAll("tr")).forEach(function (tr) {
+      if (lockedCategoryId) return;
+      var cid = rowCategoryId(tr);
+      if (cid) lockedCategoryId = cid;
+    });
+    if (lockedCategoryId && categorySel) {
+      categorySel.value = lockedCategoryId;
+    }
+    if (categorySel) categorySel.disabled = !!lockedCategoryId;
+    if (categoryHint) {
+      if (lockedCategoryId && categorySel) {
+        var opt = categorySel.options[categorySel.selectedIndex];
+        var name = opt ? opt.textContent.trim() : "";
+        categoryHint.textContent = name
+          ? ("Категория документа: " + name + ". Другие категории недоступны.")
+          : "В одном отпуске — товары только из одной категории.";
+      } else {
+        categoryHint.textContent = "В одном отпуске — товары только из одной категории.";
+      }
+    }
+    filterProducts();
+  }
+
+  function categoryErrorForProductId(pid, categoryId) {
+    if (!lockedCategoryId || !categoryId) return null;
+    if (String(categoryId) === String(lockedCategoryId)) return null;
+    return "В одном отпуске можно добавлять товары только из одной категории.";
+  }
+
+  function validateDocumentCategories() {
+    var cats = {};
+    Array.from(tbody.querySelectorAll("tr")).forEach(function (tr) {
+      var cid = rowCategoryId(tr);
+      if (cid) cats[cid] = true;
+    });
+    return Object.keys(cats).length <= 1;
+  }
+
+  function filterProducts() {
+    var cid = categorySel ? (categorySel.value || "") : "";
+    if (lockedCategoryId) cid = lockedCategoryId;
+    var q = (searchInput.value || "").toLowerCase().trim();
+
+    Array.from(subcategorySel.options).forEach(function (opt) {
+      if (!opt.value) return;
+      var ok = !cid || opt.getAttribute("data-category-id") === cid;
+      opt.hidden = !ok;
+      if (!ok && opt.selected) opt.selected = false;
+    });
+
+    var sid = subcategorySel.value || "";
+    var firstVisible = null;
+
+    Array.from(pickList.children).forEach(function (el) {
+      if (!el.classList || !el.classList.contains("stockout-pick-item")) return;
+      var byCat = !cid || el.getAttribute("data-category-id") === cid;
+      var bySub = !sid || el.getAttribute("data-subcategory-id") === sid;
+      var byQ = !q || (el.getAttribute("data-name") || "").toLowerCase().indexOf(q) >= 0
+                    || (el.getAttribute("data-sku") || "").toLowerCase().indexOf(q) >= 0;
+      var visible = byCat && bySub && byQ;
+      el.style.display = visible ? "" : "none";
+      if (!firstVisible && visible) firstVisible = el;
+    });
+
+    if (selectedItem && selectedItem.style.display === "none") {
+      selectedItem.classList.remove("is-selected");
+      selectedItem = null;
+    }
+    if (!selectedItem && firstVisible) {
+      firstVisible.classList.add("is-selected");
+      selectedItem = firstVisible;
+    }
+  }
+
+  pickList.addEventListener("click", function (e) {
+    var item = e.target.closest(".stockout-pick-item");
+    if (!item) return;
+    Array.from(pickList.children).forEach(function (el) { el.classList.remove("is-selected"); });
+    item.classList.add("is-selected");
+    selectedItem = item;
+  });
+
+  function addRow() {
+    if (!selectedItem) return;
+    var itemCat = selectedItem.getAttribute("data-category-id");
+    var catErr = categoryErrorForProductId(selectedItem.getAttribute("data-id"), itemCat);
+    if (catErr) {
+      window.alert(catErr);
+      return;
+    }
+    var qty = Number(qtyInput.value || "0");
+    if (!qty || qty <= 0) return;
+    var pid = selectedItem.getAttribute("data-id");
+    var name = selectedItem.getAttribute("data-name");
+    var sku = selectedItem.getAttribute("data-sku") || "-";
+    var unit = selectedItem.getAttribute("data-unit") || "шт";
+    var balance = Number(selectedItem.getAttribute("data-balance") || "0");
+    var limitBalance = selectedItem.getAttribute("data-limit-balance");
+    var limitAttr = (limitBalance !== null && limitBalance !== "") ? ' data-limit-balance="' + limitBalance + '"' : "";
+    var img = selectedItem.getAttribute("data-img") || "";
+    var imgHtml = img ? '<img src="' + img + '" class="stockout-item-row-img" alt="">' : '';
+    var tr = document.createElement("tr");
+    tr.setAttribute("data-category-id", itemCat || "");
+    tr.innerHTML =
+      '<td>' + imgHtml + name + ' <span class="muted">(' + sku + ')</span><input type="hidden" name="product_id[]" value="' + pid + '"></td>' +
+      '<td class="right stockout-balance-cell" data-balance="' + balance + '"' + limitAttr + ' data-product-id="' + pid + '">' + formatQty(balance) + '</td>' +
+      '<td class="right"><input name="qty[]" class="stockout-qty-input" type="number" min="0.01" step="0.01" value="' + qty + '"></td>' +
+      '<td>' + unit + '</td>' +
+      '<td><button type="button" class="btn btn-icon btn-danger js-remove-line"><span class="material-icons-outlined">delete</span></button></td>';
+    tbody.appendChild(tr);
+    syncLockedCategory();
+    updateRowRisk(tr);
+    recalcTotals();
+  }
+
+  function recalcTotals() {
+    var rows = Array.from(tbody.querySelectorAll("tr"));
+    var total = 0;
+    rows.forEach(function (tr) {
+      var qty = Number((tr.querySelector('input[name="qty[]"]') || {}).value || 0);
+      if (Number.isFinite(qty) && qty > 0) total += qty;
+    });
+    totals.textContent = "Позиций: " + rows.length + " · Итого: " + formatQty(total);
+  }
+
+  function rowLimitBalance(balCell) {
+    if (!balCell) return 0;
+    var limitRaw = balCell.getAttribute("data-limit-balance");
+    if (limitRaw !== null && limitRaw !== "") return Number(limitRaw);
+    return Number(balCell.getAttribute("data-balance") || 0);
+  }
+
+  function recalcAllRowRisk() {
+    var totalsByPid = {};
+    Array.from(tbody.querySelectorAll("tr")).forEach(function (tr) {
+      var pid = rowProductId(tr);
+      if (!pid) return;
+      var qty = Number((tr.querySelector('input[name="qty[]"]') || {}).value || 0);
+      if (!Number.isFinite(qty) || qty <= 0) return;
+      totalsByPid[pid] = (totalsByPid[pid] || 0) + qty;
+    });
+    Array.from(tbody.querySelectorAll("tr")).forEach(function (tr) {
+      var balCell = tr.querySelector(".stockout-balance-cell");
+      var pid = rowProductId(tr);
+      var limitBalance = rowLimitBalance(balCell);
+      var totalForProduct = Number(totalsByPid[pid] || 0);
+      tr.classList.toggle(
+        "row-low-stock",
+        !!pid && Number.isFinite(limitBalance) && Number.isFinite(totalForProduct) && totalForProduct > limitBalance
+      );
+    });
+  }
+
+  function updateRowRisk(tr) {
+    recalcAllRowRisk();
+  }
+
+  addBtn.addEventListener("click", addRow);
+  pickList.addEventListener("dblclick", function (e) {
+    var item = e.target.closest(".stockout-pick-item");
+    if (!item) return;
+    selectedItem = item;
+    addRow();
+  });
+  tbody.addEventListener("click", function (e) {
+    var btn = e.target.closest(".js-remove-line");
+    if (!btn) return;
+    var tr = btn.closest("tr");
+    if (tr) tr.remove();
+    syncLockedCategory();
+    recalcTotals();
+    recalcAllRowRisk();
+  });
+  tbody.addEventListener("input", function (e) {
+    if (!e.target.matches('input[name="qty[]"]')) return;
+    var tr = e.target.closest("tr");
+    if (tr) updateRowRisk(tr);
+    recalcTotals();
+  });
+  categorySel.addEventListener("change", filterProducts);
+  subcategorySel.addEventListener("change", filterProducts);
+  searchInput.addEventListener("input", filterProducts);
+  if (saveDraftBtn) saveDraftBtn.addEventListener("click", function () { actionInput.value = "save_draft"; });
+  if (postBtn) postBtn.addEventListener("click", function () { actionInput.value = "post"; });
+  if (updatePostedBtn) updatePostedBtn.addEventListener("click", function () { actionInput.value = "update_posted"; });
+  if (formEl) {
+    formEl.addEventListener("submit", function (e) {
+      if (canEditPosted && updatePostedBtn) actionInput.value = "update_posted";
+      if (!validateDocumentCategories()) {
+        e.preventDefault();
+        window.alert("В одном отпуске можно указать товары только из одной категории.");
+      }
+    });
+  }
+
+  Array.from(tbody.querySelectorAll("tr")).forEach(function (tr) {
+    var cell = tr.querySelector(".stockout-balance-cell");
+    var pid = cell && cell.getAttribute("data-product-id");
+    if (pid && !canEditPosted) {
+      fetch("/api/stock/balance?product_id=" + encodeURIComponent(pid), { credentials: "same-origin" })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (data) {
+          if (!data || data.balance == null) return;
+          var actual = Number(data.balance);
+          cell.setAttribute("data-balance", String(actual));
+          cell.textContent = formatQty(actual);
+          recalcAllRowRisk();
+        })
+        .catch(function () {});
+    }
+  });
+  if (canEditPosted) {
+    function refreshPostedBalances(pid, balCell, pickEl) {
+      fetch("/api/stock/balance?product_id=" + encodeURIComponent(pid), { credentials: "same-origin" })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (data) {
+          if (!data || data.balance == null) return;
+          var actual = Number(data.balance);
+          var limit = balanceAdjust(pid, actual);
+          if (balCell) {
+            balCell.setAttribute("data-balance", String(actual));
+            balCell.setAttribute("data-limit-balance", String(limit));
+            balCell.textContent = formatQty(actual);
+          }
+          if (pickEl) {
+            pickEl.setAttribute("data-balance", String(actual));
+            pickEl.setAttribute("data-limit-balance", String(limit));
+            var balEl = pickEl.querySelector(".stockout-pick-item__balance");
+            if (balEl) balEl.textContent = formatQty(actual);
+          }
+          recalcAllRowRisk();
+        })
+        .catch(function () {});
+    }
+    Array.from(tbody.querySelectorAll("tr")).forEach(function (tr) {
+      var cell = tr.querySelector(".stockout-balance-cell");
+      var pid = cell && cell.getAttribute("data-product-id");
+      if (pid) refreshPostedBalances(pid, cell, null);
+    });
+    Array.from(pickList.querySelectorAll(".stockout-pick-item")).forEach(function (el) {
+      var pid = el.getAttribute("data-id");
+      if (pid) refreshPostedBalances(pid, null, el);
+    });
+  }
+  syncLockedCategory();
+  recalcAllRowRisk();
+  recalcTotals();
+})();
+</script>
+
+{% endblock %}

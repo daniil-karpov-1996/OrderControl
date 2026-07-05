@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="page">
+
+  <div class="card" style="max-width:420px; margin:40px auto;">
+    <div style="text-align:center; margin-bottom:20px;">
+      <img src="/static/favicon.png" alt="" style="height:48px;width:48px;object-fit:contain;margin-bottom:8px;">
+      <h2 style="margin:0;">OrderControl</h2>
+      <div class="muted">Вход в систему</div>
+    </div>
+
+    {% if error %}
+    <div class="error">{{ error }}</div>
+    {% endif %}
+
+    <form id="loginForm" method="post" action="/login">
+      <div style="margin-bottom:14px;">
+        <label>Логин</label>
+        <input name="username" autocomplete="username" required placeholder="Введите логин">
+      </div>
+      <div style="margin-bottom:18px;">
+        <label>Пароль</label>
+        <input name="password" type="password" autocomplete="current-password" required placeholder="Введите пароль">
+      </div>
+      <button class="btn btn-primary" type="submit" style="width:100%; padding:12px;">Войти</button>
+    </form>
+  </div>
+
+</div>
+
+{% endblock %}

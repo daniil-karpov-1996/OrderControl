@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="page">
+
+  <div class="card">
+    <div class="page-head">
+      <h2>Профиль</h2>
+    </div>
+
+    {% if error %}
+    <div class="error">{{ error }}</div>
+    {% endif %}
+    {% if success %}
+    <div class="positive" style="margin-bottom:12px;">{{ success }}</div>
+    {% endif %}
+
+    <div style="display:flex; gap:16px; align-items:center; margin-bottom:20px; padding:12px; border-radius:12px; background:color-mix(in oklab, var(--bg) 60%, transparent); border:1px solid var(--line2);">
+      <span class="material-icons-outlined" style="font-size:40px; color:var(--brand);">account_circle</span>
+      <div>
+        <div style="font-size:18px; font-weight:700;">{{ username }}</div>
+        <span class="badge" style="margin-top:4px;">
+          {% if role == "admin" %}Админ{% elif role == "manager" %}Менеджер{% elif role == "viewer" %}Читатель{% else %}{{ role }}{% endif %}
+        </span>
+      </div>
+    </div>
+
+    <div class="section-title">Сменить пароль</div>
+    <form method="post" class="form-grid--3">
+      <div>
+        <label>Текущий пароль</label>
+        <input name="current_password" type="password" placeholder="Текущий пароль" required>
+      </div>
+      <div>
+        <label>Новый пароль</label>
+        <input name="new_password" type="password" placeholder="Новый пароль" required>
+      </div>
+      <div>
+        <label>Подтверждение</label>
+        <input name="confirm_password" type="password" placeholder="Повторите новый пароль" required>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" type="submit">Сохранить пароль</button>
+      </div>
+    </form>
+  </div>
+
+</div>
+
+{% endblock %}

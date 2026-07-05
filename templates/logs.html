@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="page">
+
+  <div class="card">
+    <div class="page-head">
+      <h2>Логи</h2>
+    </div>
+
+    <form method="get" action="/logs" class="form-grid" style="margin-bottom:14px;">
+      <input type="hidden" name="page" value="1" />
+      <div>
+        <label>Дата с</label>
+        <input type="datetime-local" name="date_from" value="{{ date_from or '' }}" />
+      </div>
+      <div>
+        <label>Дата по</label>
+        <input type="datetime-local" name="date_to" value="{{ date_to or '' }}" />
+      </div>
+      <div>
+        <label>Уровень</label>
+        <select name="level">
+          <option value="">Все</option>
+          <option value="INFO" {% if level=='INFO' %}selected{% endif %}>ИНФО</option>
+          <option value="WARN" {% if level=='WARN' %}selected{% endif %}>ПРЕД</option>
+          <option value="ERROR" {% if level=='ERROR' %}selected{% endif %}>ОШИБКА</option>
+          <option value="AUDIT" {% if level=='AUDIT' %}selected{% endif %}>АУДИТ</option>
+        </select>
+      </div>
+      <div>
+        <label>Поиск</label>
+        <input type="text" name="q" value="{{ q or '' }}" placeholder="Событие, пользователь…" />
+      </div>
+      <div style="display:flex; gap:6px; align-self:end;">
+        <button type="submit" class="btn btn-primary btn-icon" title="Найти">
+          <span class="material-icons-outlined">search</span>
+        </button>
+        {% set has_filters = q or level or date_from or date_to %}
+        {% if has_filters %}
+        <a class="btn btn-ghost btn-icon" href="/logs" title="Сбросить">
+          <span class="material-icons-outlined">close</span>
+        </a>
+        {% endif %}
+      </div>
+    </form>
+
+    {% if has_filters %}
+    <div class="muted" style="margin-bottom:10px; font-size:13px;">
+      Фильтры:
+      {% if q %}<span class="chip">поиск: {{ q }}</span>{% endif %}
+      {% if level %}<span class="chip">уровень: {{
+        {'INFO':'ИНФО','WARN':'ПРЕД','ERROR':'ОШИБКА','AUDIT':'АУДИТ'}.get(level, level) }}</span>{% endif %}
+      {% if date_from %}<span class="chip">с {{ date_from }}</span>{% endif %}
+      {% if date_to %}<span class="chip">по {{ date_to }}</span>{% endif %}
+    </div>
+    {% endif %}
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 14%;">Дата</th>
+            <th style="width: 9%;">Уровень</th>
+            <th style="width: 16%;">Событие</th>
+            <th style="width: 13%;">Пользователь</th>
+            <th style="width: 12%;">Сущность</th>
+            <th style="width: 24%;">Сообщение</th>
+            <th style="width: 12%;">IP</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for l in logs %}
+          <tr>
+            <td class="muted">{{ fmt_dt(l["created_at"]) }}</td>
+            <td>
+              {% set lvl = l.get('level') or 'INFO' %}
+              <span class="badge badge-{{ lvl }}">{{
+                {'INFO':'ИНФО','WARN':'ПРЕД','ERROR':'ОШИБКА','AUDIT':'АУДИТ'}.get(lvl, lvl) }}</span>
+            </td>
+            <td>{{ l.get("event") or "-" }}</td>
+            <td>{{ l.get("actor_username") or "-" }}</td>
+            <td>{{ l.get("entity") or "-" }}</td>
+            <td class="muted">{{ l.get("message") or l.get("entity_id") or "-" }}</td>
+            <td class="muted">{{ l.get("ip") or "-" }}</td>
+          </tr>
+          {% endfor %}
+          {% if not logs %}
+          <tr>
+            <td colspan="7" class="muted" style="text-align:center;padding:24px;">Нет записей</td>
+          </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if pages > 1 %}
+    {% set qs_suffix = "" %}
+    {% if q %}{% set qs_suffix = qs_suffix ~ "&q=" ~ q %}{% endif %}
+    {% if level %}{% set qs_suffix = qs_suffix ~ "&level=" ~ level %}{% endif %}
+    {% if date_from %}{% set qs_suffix = qs_suffix ~ "&date_from=" ~ date_from %}{% endif %}
+    {% if date_to %}{% set qs_suffix = qs_suffix ~ "&date_to=" ~ date_to %}{% endif %}
+    <div class="pagination">
+      {% if page > 1 %}
+      <a class="btn btn-sm btn-ghost" href="/logs?page={{ page - 1 }}{{ qs_suffix }}">← Назад</a>
+      {% else %}
+      <span></span>
+      {% endif %}
+      <span class="muted">Стр. {{ page }} / {{ pages }}</span>
+      {% if page < pages %}
+      <a class="btn btn-sm btn-ghost" href="/logs?page={{ page + 1 }}{{ qs_suffix }}">Далее →</a>
+      {% else %}
+      <span></span>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+
+</div>
+
+{% endblock %}

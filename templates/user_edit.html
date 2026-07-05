@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="page">
+
+  <div class="card">
+    <div class="page-head">
+      <h2>Редактирование пользователя #{{ admin["id"] }}</h2>
+    </div>
+
+    {% if error %}
+    <div class="error">{{ error }}</div>
+    {% endif %}
+
+    <form method="post" class="form-grid--2">
+      {% if request.args.get('from_modal') == '1' or request.form.get('from_modal') == '1' %}
+      <input type="hidden" name="from_modal" value="1">
+      {% endif %}
+
+      <div>
+        <label>Логин</label>
+        {% if is_root and current_admin_id != admin["id"] %}
+        <div style="padding:10px 0; font-weight:600;">{{ admin["username"] }}</div>
+        {% else %}
+        <input name="username" value="{{ admin['username'] }}" required>
+        {% endif %}
+      </div>
+
+      <div>
+        <label>Роль</label>
+        {% if is_root %}
+        <div style="padding:10px 0;"><span class="badge badge-positive">Супер-админ</span></div>
+        {% elif is_self_admin %}
+        <div style="padding:10px 0;">Админ</div>
+        {% else %}
+        <select name="role">
+          {% set role = admin.get("role") or "admin" %}
+          <option value="admin" {% if role=="admin" %}selected{% endif %}>Админ</option>
+          <option value="manager" {% if role=="manager" %}selected{% endif %}>Менеджер</option>
+          <option value="viewer" {% if role=="viewer" %}selected{% endif %}>Читатель</option>
+        </select>
+        {% endif %}
+      </div>
+
+      <div>
+        <label>Новый пароль</label>
+        {% if is_root and current_admin_id != admin["id"] %}
+        <div class="muted" style="padding:10px 0;">Недоступно</div>
+        {% else %}
+        <input name="password" type="password" placeholder="Оставьте пустым для без изменений">
+        {% endif %}
+      </div>
+
+      <div>
+        <label>Статус</label>
+        <label class="check" style="margin-top:2px; cursor:pointer;">
+          <input type="checkbox" name="is_active" value="1" {% if admin["is_active"] or is_root or is_self_admin %}checked{% endif %} {% if is_root or is_self_admin %}disabled{% endif %}>
+          Активен
+        </label>
+      </div>
+
+      <div class="form-actions">
+        <a class="btn" href="/admins">Отмена</a>
+        <button class="btn btn-primary" type="submit">Сохранить</button>
+      </div>
+    </form>
+  </div>
+
+</div>
+
+{% endblock %}

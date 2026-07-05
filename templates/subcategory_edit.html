@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="page">
+
+  <div class="card">
+    <div class="page-head">
+      <h2>Редактирование подкатегории</h2>
+    </div>
+
+    {% if error %}
+    <div class="error">{{ error }}</div>
+    {% endif %}
+
+    {% if not is_viewer_role %}
+    <form method="post" class="form-grid--3">
+      {% if request.args.get('from_modal') == '1' or request.form.get('from_modal') == '1' %}
+      <input type="hidden" name="from_modal" value="1">
+      {% endif %}
+      <div>
+        <label>Название подкатегории *</label>
+        <input name="name" required value="{{ (form.get('name') if form else subcategory['name']) }}">
+      </div>
+      <div class="form-actions">
+        <button class="btn" type="button" onclick="cancelEdit()">Отмена</button>
+        <button class="btn btn-primary" type="submit">Сохранить</button>
+      </div>
+    </form>
+    {% else %}
+    <div class="muted">Режим просмотра (viewer): редактирование отключено.</div>
+    {% endif %}
+
+    <div class="muted" style="margin-top:12px; font-size:12px;">
+      Создана: {{ fmt_dt(subcategory["created_at"]) }}
+    </div>
+  </div>
+
+  <script>
+    function cancelEdit() {
+      try {
+        if (window.self !== window.top && window.parent && window.parent.closeEditModal) {
+          window.parent.closeEditModal({ instant: true });
+          return;
+        }
+      } catch (_) { }
+      window.location.href = "/subcategories?category_id={{ subcategory['category_id'] }}";
+    }
+  </script>
+
+</div>
+
+{% endblock %}

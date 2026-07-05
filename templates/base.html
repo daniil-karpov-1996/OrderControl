@@ -1,0 +1,225 @@
+{% if not fragment %}
+<!doctype html>
+<html lang="ru" data-theme="dark">
+
+<head>
+  <meta charset="utf-8">
+  <title>{{ title }}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  {% if block_search_indexing %}
+  <meta name="robots" content="noindex, nofollow">
+  {% endif %}
+
+  <link rel="stylesheet" href="/static/app.css?v={{ static_cache_buster }}">
+  <link rel="icon" type="image/png" href="/static/favicon.png?v={{ static_cache_buster }}">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined">
+
+  <script>
+    (function () {
+      const saved = localStorage.getItem("theme");
+      if (saved === "dark" || saved === "light") {
+        document.documentElement.setAttribute("data-theme", saved);
+      }
+    })();
+  </script>
+</head>
+
+<body>
+{% if current_user %}
+  <div class="app-shell">
+    <aside class="sidebar" id="appSidebar">
+      <div class="sidebar__brand">
+        <a href="/">
+          <img src="/static/favicon.png" alt="" class="sidebar__logo">
+          <strong>OrderControl</strong>
+          <span class="app-badge">{{ app_version }}</span>
+        </a>
+      </div>
+
+      <nav class="sidebar__nav">
+        <a class="sidebar__link" href="/">
+          <span class="material-icons-outlined">dashboard</span> Главная
+        </a>
+
+        <div class="sidebar__section">Каталог</div>
+        <a class="sidebar__link sidebar__link--sub" href="/catalog">
+          <span class="material-icons-outlined">category</span> Каталог
+        </a>
+        <a class="sidebar__link sidebar__link--sub" href="/products">
+          <span class="material-icons-outlined">inventory_2</span> Товары
+        </a>
+        <a class="sidebar__link sidebar__link--sub" href="/categories">
+          <span class="material-icons-outlined">folder</span> Категории
+        </a>
+        <a class="sidebar__link sidebar__link--sub" href="/subcategories">
+          <span class="material-icons-outlined">folder_open</span> Подкатегории
+        </a>
+        <a class="sidebar__link sidebar__link--sub" href="/clients">
+          <span class="material-icons-outlined">people</span> Клиенты
+        </a>
+
+        <div class="sidebar__section">Склад</div>
+        <a class="sidebar__link sidebar__link--sub" href="/stock/in">
+          <span class="material-icons-outlined">add_circle_outline</span> Приход
+        </a>
+        <a class="sidebar__link sidebar__link--sub" href="/stock/in/docs">
+          <span class="material-icons-outlined">description</span> Документы прихода
+        </a>
+        <a class="sidebar__link sidebar__link--sub" href="/stock/out">
+          <span class="material-icons-outlined">remove_circle_outline</span> Отпуск
+        </a>
+        <a class="sidebar__link sidebar__link--sub" href="/stock/out/docs">
+          <span class="material-icons-outlined">description</span> Документы отпуска
+        </a>
+        <a class="sidebar__link sidebar__link--sub" href="/stock/moves">
+          <span class="material-icons-outlined">receipt_long</span> Журнал движений
+        </a>
+        <a class="sidebar__link sidebar__link--sub" href="/stock/inventory">
+          <span class="material-icons-outlined">fact_check</span> Инвентаризация
+        </a>
+        <a class="sidebar__link sidebar__link--sub" href="/stock/inventory/docs">
+          <span class="material-icons-outlined">description</span> Документы инвентаризации
+        </a>
+
+        {% if is_admin_role %}
+        <div class="sidebar__section">Система</div>
+        <a class="sidebar__link sidebar__link--sub" href="/admins">
+          <span class="material-icons-outlined">admin_panel_settings</span> Пользователи
+        </a>
+        <a class="sidebar__link sidebar__link--sub" href="/logs">
+          <span class="material-icons-outlined">history</span> Логи
+        </a>
+        {% endif %}
+      </nav>
+
+      <div class="sidebar__footer">
+        <div class="sidebar__theme-row">
+          <button type="button" class="sidebar__theme-btn" data-theme-pick="light" title="Светлая тема">
+            <span class="material-icons-outlined">wb_sunny</span>
+          </button>
+          <button type="button" class="sidebar__theme-btn" data-theme-pick="dark" title="Тёмная тема">
+            <span class="material-icons-outlined">dark_mode</span>
+          </button>
+        </div>
+        <div class="sidebar__user-row">
+          <span class="material-icons-outlined">account_circle</span>
+          <span class="sidebar__username">{{ current_username }}</span>
+        </div>
+        <a class="sidebar__link sidebar__link--sm" href="/profile">
+          <span class="material-icons-outlined">person</span> Профиль
+        </a>
+        <a class="sidebar__link sidebar__link--sm sidebar__link--danger" href="/logout">
+          <span class="material-icons-outlined">logout</span> Выйти
+        </a>
+      </div>
+    </aside>
+
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+    <div class="app-body">
+      <div class="topbar" id="appTopbar">
+        <button class="topbar__btn" type="button" id="sidebarToggle" aria-label="Меню">
+          <span class="material-icons-outlined">menu</span>
+        </button>
+        <a href="/" class="topbar__brand">
+          <img src="/static/favicon.png" alt="" style="height:20px;width:20px;object-fit:contain;">
+          <strong>OrderControl</strong>
+        </a>
+        <div style="flex:1;"></div>
+        <a href="/profile" class="topbar__user" title="{{ current_username }}">
+          <span class="material-icons-outlined">account_circle</span>
+        </a>
+      </div>
+      <main class="container" id="appMain">
+{% else %}
+  <main class="container app-login-container" id="appMain">
+{% endif %}
+{% endif %}
+
+  {% block content %}{% endblock %}
+
+{% if not fragment %}
+{% if current_user %}
+      </main>
+      <footer class="app-footer">
+        <div class="app-footer__inner">
+          <div class="muted">© <span id="footerYear"></span> OrderControl {{ app_version }}</div>
+        </div>
+      </footer>
+    </div>
+  </div>
+{% else %}
+  </main>
+{% endif %}
+
+  <div class="toast-host" id="toastHost" aria-live="polite" aria-relevant="additions"></div>
+
+  <div class="modal-backdrop hidden" id="modalBackdrop">
+    <div class="modal" id="modalWindow">
+      <div class="modal__header">
+        <div class="modal__title" id="modalTitle">Редактирование</div>
+        <button class="modal__close" type="button" aria-label="Закрыть" data-modal-close>
+          <span class="material-icons-outlined">close</span>
+        </button>
+      </div>
+      <div class="modal__body">
+        <iframe id="modalFrame" src="about:blank" frameborder="0"></iframe>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js?v={{ static_cache_buster }}"></script>
+  <script>
+    window.__icRealtimePrefKey = "oc_rt_enabled_u{{ current_admin_id or 0 }}";
+    window.__icRealtimeDefaultOn = false;
+    window.__icRealtimeUserLabel = {{ (current_username or "")|tojson }};
+  </script>
+  <script>
+    try {
+      if (typeof window.icInitComboboxes === "function") window.icInitComboboxes(document);
+    } catch (_) { }
+  </script>
+  <script>
+    (function () {
+      var p = location.pathname;
+      document.querySelectorAll(".sidebar__link").forEach(function (a) {
+        var h = a.getAttribute("href");
+        if (!h) return;
+        if (h === p) a.classList.add("active");
+      });
+    })();
+    (function () {
+      var sb = document.getElementById("appSidebar");
+      var ov = document.getElementById("sidebarOverlay");
+      var btn = document.getElementById("sidebarToggle");
+      if (!sb || !btn) return;
+      function toggle() {
+        sb.classList.toggle("sidebar--open");
+        if (ov) ov.classList.toggle("sidebar-overlay--visible");
+      }
+      function close() {
+        sb.classList.remove("sidebar--open");
+        if (ov) ov.classList.remove("sidebar-overlay--visible");
+      }
+      btn.addEventListener("click", toggle);
+      if (ov) ov.addEventListener("click", close);
+      document.querySelectorAll(".sidebar__link").forEach(function (a) {
+        a.addEventListener("click", function () {
+          if (window.innerWidth <= 900) close();
+        });
+      });
+    })();
+    (function () {
+      document.querySelectorAll("[data-theme-pick]").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          var t = btn.getAttribute("data-theme-pick");
+          document.documentElement.setAttribute("data-theme", t);
+          localStorage.setItem("theme", t);
+        });
+      });
+    })();
+  </script>
+</body>
+
+</html>
+{% endif %}

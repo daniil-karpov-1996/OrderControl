@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="page">
+
+  <div class="card">
+    <div class="page-head">
+      <h2>Редактирование клиента</h2>
+    </div>
+
+    {% if error %}
+    <div class="error">{{ error }}</div>
+    {% endif %}
+
+    {% if not is_viewer_role %}
+    <form method="post" class="form-grid--3">
+      {% if request.args.get('from_modal') == '1' or request.form.get('from_modal') == '1' %}
+      <input type="hidden" name="from_modal" value="1">
+      {% endif %}
+      <div>
+        <label>ФИО *</label>
+        <input name="full_name" value="{{ (form.get('full_name') if form else client['full_name']) }}" required>
+      </div>
+      <div>
+        <label>Телефон</label>
+        <input type="tel" inputmode="tel" autocomplete="tel" name="phone"
+          value="{{ (form.get('phone') if form else client['phone'] or '') }}"
+          pattern="[0-9+\-().\s]*"
+          title="С + в начале; лимит цифр по стране (макс. 15 всего)">
+      </div>
+      <div class="form-actions">
+        <button class="btn" type="button" onclick="cancelEdit()">Отмена</button>
+        <button class="btn btn-primary" type="submit">Сохранить</button>
+      </div>
+    </form>
+    {% else %}
+    <div class="muted">Режим просмотра (viewer): редактирование отключено.</div>
+    {% endif %}
+
+    <div class="muted" style="margin-top:12px; font-size:12px;">
+      Создан: {{ fmt_dt(client["created_at"]) }}
+    </div>
+  </div>
+
+  <script>
+    function cancelEdit() {
+      try {
+        if (window.self !== window.top && window.parent && window.parent.closeEditModal) {
+          window.parent.closeEditModal({ instant: true });
+          return;
+        }
+      } catch (_) { }
+      window.location.href = "/clients";
+    }
+  </script>
+
+</div>
+
+{% endblock %}

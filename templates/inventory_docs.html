@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="page">
+  <div class="card">
+    <div class="card__header">
+      <h2>Документы инвентаризации</h2>
+      {% if not is_viewer_role %}
+      <a class="btn btn-primary" href="/stock/inventory">
+        <span class="material-icons-outlined" style="font-size:18px;vertical-align:middle;">add</span>
+        Новая инвентаризация
+      </a>
+      {% endif %}
+    </div>
+
+    <form method="get" style="display:flex; gap:10px; align-items:end; flex-wrap:wrap; margin-bottom:6px;">
+      <div style="min-width:150px; max-width:180px;">
+        <label>Статус</label>
+        <select name="status" onchange="this.form.submit()">
+          <option value="">Все</option>
+          <option value="draft" {% if filter_status == 'draft' %}selected{% endif %}>Черновики</option>
+          <option value="posted" {% if filter_status == 'posted' %}selected{% endif %}>Проведённые</option>
+        </select>
+      </div>
+      <div style="flex:1; min-width:200px; max-width:350px;">
+        <label>Поиск</label>
+        <input name="q" placeholder="Номер, примечание…" value="{{ filter_q }}">
+      </div>
+      <div style="display:flex; gap:6px;">
+        <button class="btn btn-primary btn-icon" type="submit" title="Найти">
+          <span class="material-icons-outlined">search</span>
+        </button>
+        {% if filter_status or filter_q %}
+        <a class="btn btn-ghost btn-icon" href="/stock/inventory/docs" title="Сбросить">
+          <span class="material-icons-outlined">close</span>
+        </a>
+        {% endif %}
+      </div>
+    </form>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th><a href="?sort=doc_no&dir={{ 'asc' if sort=='doc_no' and dir=='desc' else 'desc' }}&status={{ filter_status }}&q={{ filter_q }}">Номер</a></th>
+            <th><a href="?sort=created&dir={{ 'asc' if sort=='created' and dir=='desc' else 'desc' }}&status={{ filter_status }}&q={{ filter_q }}">Дата</a></th>
+            <th><a href="?sort=status&dir={{ 'asc' if sort=='status' and dir=='desc' else 'desc' }}&status={{ filter_status }}&q={{ filter_q }}">Статус</a></th>
+            <th class="right">Позиций</th>
+            <th class="right">Расхождений</th>
+            <th>Примечание</th>
+            <th>Автор</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for d in docs %}
+          <tr>
+            <td><a href="/stock/inventory?doc_id={{ d['id'] }}"><strong>{{ d["doc_no"] }}</strong></a></td>
+            <td class="muted">{{ fmt_dt(d["created_at"]) }}</td>
+            <td>
+              {% if d["status"] == "posted" %}
+              <span class="chip chip--success">Проведён</span>
+              {% else %}
+              <span class="chip chip--warning">Черновик</span>
+              {% endif %}
+            </td>
+            <td class="right">{{ d["item_count"] }}</td>
+            <td class="right">{{ d["diff_count"] }}</td>
+            <td class="muted">{{ (d["note"] or "")[:50] }}{{ "…" if d["note"] and (d["note"]|length) > 50 else "" }}</td>
+            <td class="muted">{{ d["created_by_name"] or "—" }}</td>
+            <td>
+              <a class="btn btn-sm btn-ghost" href="/stock/inventory?doc_id={{ d['id'] }}">
+                {{ "Редактировать" if d["status"] == "draft" and not is_viewer_role else "Открыть" }}
+              </a>
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="8" class="muted" style="text-align:center;padding:24px;">Документы не найдены</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if pages > 1 %}
+    <div class="pagination">
+      {% if page > 1 %}
+      <a class="btn btn-sm btn-ghost" href="?page={{ page - 1 }}&per_page={{ per_page }}&sort={{ sort }}&dir={{ dir }}&status={{ filter_status }}&q={{ filter_q }}">&larr; Назад</a>
+      {% endif %}
+      <span class="muted">Стр. {{ page }} / {{ pages }}</span>
+      {% if page < pages %}
+      <a class="btn btn-sm btn-ghost" href="?page={{ page + 1 }}&per_page={{ per_page }}&sort={{ sort }}&dir={{ dir }}&status={{ filter_status }}&q={{ filter_q }}">Далее &rarr;</a>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{% endblock %}

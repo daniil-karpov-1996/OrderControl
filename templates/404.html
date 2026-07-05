@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="http-error">
+  <div class="http-error__glow http-error__glow--1" aria-hidden="true"></div>
+  <div class="http-error__glow http-error__glow--2" aria-hidden="true"></div>
+  <div class="http-error__glow http-error__glow--3" aria-hidden="true"></div>
+
+  <div class="http-error__card">
+    <p class="http-error__code" aria-hidden="true">{{ err_http_code }}</p>
+    <h1 class="http-error__title">{{ err_heading }}</h1>
+    <p class="http-error__lead">{{ err_lead }}</p>
+
+    {% if err_uri %}
+    <div class="http-error__path-wrap">
+      <code class="http-error__path">{{ err_uri }}</code>
+    </div>
+    {% endif %}
+
+    <div class="http-error__actions">
+      {% if not current_user %}
+      <a class="btn btn-ghost" href="/login">
+        <span class="material-icons-outlined" style="font-size:18px;">login</span>
+        Вход
+      </a>
+      {% else %}
+      <a class="btn btn-primary" href="/">
+        На главную
+      </a>
+      <button type="button" class="btn" onclick="history.length > 1 ? history.back() : (location.href='/')">
+        <span class="material-icons-outlined" style="font-size:18px;">arrow_back</span>
+        Назад
+      </button>
+      {% endif %}
+    </div>
+  </div>
+
+</div>
+
+{% endblock %}

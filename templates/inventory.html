@@ -1,0 +1,268 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="page">
+  <div class="card">
+    <div style="margin-bottom:6px;">
+      <a class="btn btn-sm btn-ghost" href="/stock/inventory/docs">
+        <span class="material-icons-outlined" style="font-size:16px;vertical-align:middle;">arrow_back</span>
+        К списку документов
+      </a>
+    </div>
+    <div class="page-head">
+      <div>
+        <h2 style="margin-bottom:2px;">Инвентаризация</h2>
+        {% if doc %}
+        <div class="muted">{{ doc["doc_no"] }} · <span class="chip {{ 'chip--success' if is_posted else 'chip--warning' }}">{{ "Проведён" if is_posted else "Черновик" }}</span></div>
+        {% else %}
+        <div class="muted">Новый документ · № {{ next_doc_no or "INV-00001" }}</div>
+        {% endif %}
+      </div>
+    </div>
+
+    {% set form_locked = is_posted or is_viewer_role %}
+
+    <form method="post" id="inventoryForm">
+      {% if doc %}<input type="hidden" name="doc_id" value="{{ doc['id'] }}">{% endif %}
+      <input type="hidden" name="action" id="inventoryAction" value="save_draft">
+
+      <div class="inventory-toolbar">
+        <div>
+          <label>Дата</label>
+          <input type="datetime-local" name="created_at" step="1" value="{{ (doc and dt_local_for_input(doc['created_at'])) or now_local }}" {% if form_locked %}readonly{% endif %}>
+        </div>
+        <div class="inventory-note">
+          <label>Примечание</label>
+          <input name="note" placeholder="Комментарий" value="{{ (doc and doc.get('note')) or '' }}" {% if form_locked %}readonly{% endif %}>
+        </div>
+      </div>
+
+      <div class="inventory-filters">
+        <div>
+          <label>Поиск</label>
+          <input id="invSearch" placeholder="Название, артикул…">
+        </div>
+        <div>
+          <label>Категория</label>
+          <select id="invCategory">
+            <option value="">Все</option>
+            {% for c in categories %}<option value="{{ c['id'] }}">{{ c["name"] }}</option>{% endfor %}
+          </select>
+        </div>
+        <div>
+          <label>Подкатегория</label>
+          <select id="invSubcategory">
+            <option value="">Все</option>
+            {% for s in subcategories %}<option value="{{ s['id'] }}" data-category-id="{{ s['category_id'] }}">{{ s["name"] }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="inventory-filter-check">
+          <label class="inventory-check-label">
+            <input type="checkbox" id="invOnlyDiff">
+            Только расхождения
+          </label>
+        </div>
+      </div>
+
+      <div class="inventory-summary muted" id="invSummary">—</div>
+
+      <div class="table-wrap inventory-table-wrap">
+        <table class="inventory-table" id="inventoryTable">
+          <thead>
+            <tr>
+              <th>Товар</th>
+              <th>Категория</th>
+              <th class="right" style="width:110px;">В системе</th>
+              <th class="right" style="width:130px;">Факт</th>
+              <th class="right" style="width:110px;">Разница</th>
+              <th style="width:60px;">Ед.</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for p in products %}
+            <tr class="inv-row"
+                data-category-id="{{ p['category_id'] }}"
+                data-subcategory-id="{{ p['subcategory_id'] }}"
+                data-name="{{ p['name'] }}"
+                data-sku="{{ p['sku'] or '' }}"
+                data-qty-system="{{ p['qty_system'] }}"
+                data-qty-actual="{{ p['qty_actual'] if p.get('qty_actual') is not none else '' }}">
+              <td>
+                {% if p.get('image_path') %}<img src="{{ p['image_path'] }}" class="stockout-item-row-img" alt="">{% endif %}
+                {{ p["name"] }} <span class="muted">({{ p["sku"] or "—" }})</span>
+                {% if not form_locked %}
+                <input type="hidden" name="product_id[]" value="{{ p['id'] }}">
+                <input type="hidden" name="qty_system[]" class="inv-system-input" value="{{ p['qty_system'] }}">
+                {% endif %}
+              </td>
+              <td class="muted">{{ p["category_name"] }} / {{ p["subcategory_name"] }}</td>
+              <td class="right inv-system-cell">{{ fmt_qty(p['qty_system']) }}</td>
+              <td class="right">
+                {% if form_locked %}
+                {{ fmt_qty(p['qty_actual']) if p.get('qty_actual') is not none else "—" }}
+                {% else %}
+                <input name="qty_actual[]" class="inv-actual-input" type="number" min="0" step="0.01" placeholder="—"
+                  value="{{ p['qty_actual'] if p.get('qty_actual') is not none else '' }}">
+                {% endif %}
+              </td>
+              <td class="right inv-diff-cell">—</td>
+              <td>{{ p["unit"] or "шт" }}</td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="6" class="muted" style="text-align:center;padding:24px;">Нет товаров для инвентаризации</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      {% if not form_locked %}
+      <div class="stockout-actions" style="margin-top:12px;">
+        <button class="btn btn-ghost" type="submit" id="invSaveDraftBtn">Сохранить черновик</button>
+        <button class="btn btn-primary" type="submit" id="invPostBtn">Провести инвентаризацию</button>
+      </div>
+      <div class="muted" style="padding:4px 0;">
+        Укажите фактическое количество и сравните с остатком в системе. Проведение сохраняет результаты сверки и не меняет складские остатки.
+      </div>
+      {% elif is_posted %}
+      <div class="muted" style="padding:8px 0;">Документ проведён. Результаты сверки сохранены, остатки на складе не изменялись.</div>
+      {% endif %}
+    </form>
+  </div>
+</div>
+
+<script>
+(function () {
+  var tbody = document.querySelector("#inventoryTable tbody");
+  if (!tbody) return;
+
+  var searchInput = document.getElementById("invSearch");
+  var categorySel = document.getElementById("invCategory");
+  var subcategorySel = document.getElementById("invSubcategory");
+  var onlyDiff = document.getElementById("invOnlyDiff");
+  var summary = document.getElementById("invSummary");
+  var actionInput = document.getElementById("inventoryAction");
+  var saveDraftBtn = document.getElementById("invSaveDraftBtn");
+  var postBtn = document.getElementById("invPostBtn");
+  var formLocked = {{ form_locked|tojson }};
+
+  function parseNum(v) {
+    var s = String(v == null ? "" : v).trim().replace(/\s/g, "").replace(",", ".");
+    if (!s || s === "—") return null;
+    var n = Number(s);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function formatQty(v) {
+    if (v === null || !Number.isFinite(v)) return "—";
+    if (Math.round(v) === v) return String(Math.round(v));
+    return v.toFixed(2);
+  }
+
+  function rowSystemQty(tr) {
+    var inp = tr.querySelector(".inv-system-input");
+    if (inp) return parseNum(inp.value);
+    return parseNum(tr.getAttribute("data-qty-system"));
+  }
+
+  function rowActualQty(tr) {
+    var inp = tr.querySelector(".inv-actual-input");
+    if (inp) return parseNum(inp.value);
+    return parseNum(tr.getAttribute("data-qty-actual"));
+  }
+
+  function rowDiff(tr) {
+    var system = rowSystemQty(tr);
+    var actual = rowActualQty(tr);
+    if (system === null || actual === null) return null;
+    return actual - system;
+  }
+
+  function rowHasDiff(tr) {
+    var diff = rowDiff(tr);
+    return diff !== null && Math.abs(diff) > 0.000001;
+  }
+
+  function paintDiff(tr) {
+    var cell = tr.querySelector(".inv-diff-cell");
+    if (!cell) return null;
+    var diff = rowDiff(tr);
+    cell.classList.remove("inv-diff--plus", "inv-diff--minus", "inv-diff--zero");
+    if (diff === null) {
+      cell.textContent = "—";
+      return null;
+    }
+    if (Math.abs(diff) < 0.000001) {
+      cell.textContent = "0";
+      cell.classList.add("inv-diff--zero");
+    } else if (diff > 0) {
+      cell.textContent = "+" + formatQty(diff);
+      cell.classList.add("inv-diff--plus");
+    } else {
+      cell.textContent = formatQty(diff);
+      cell.classList.add("inv-diff--minus");
+    }
+    return diff;
+  }
+
+  function filterRows() {
+    var cid = categorySel ? categorySel.value : "";
+    var q = (searchInput ? searchInput.value : "").toLowerCase().trim();
+    var only = !!(onlyDiff && onlyDiff.checked);
+
+    if (subcategorySel) {
+      Array.from(subcategorySel.options).forEach(function (opt) {
+        if (!opt.value) return;
+        var ok = !cid || opt.getAttribute("data-category-id") === cid;
+        opt.hidden = !ok;
+        if (!ok && opt.selected) opt.selected = false;
+      });
+    }
+    var sid = subcategorySel ? subcategorySel.value : "";
+
+    Array.from(tbody.querySelectorAll(".inv-row")).forEach(function (tr) {
+      var byCat = !cid || String(tr.getAttribute("data-category-id")) === String(cid);
+      var bySub = !sid || String(tr.getAttribute("data-subcategory-id")) === String(sid);
+      var byQ = !q
+        || (tr.getAttribute("data-name") || "").toLowerCase().indexOf(q) >= 0
+        || (tr.getAttribute("data-sku") || "").toLowerCase().indexOf(q) >= 0;
+      var byDiff = !only || rowHasDiff(tr);
+      tr.style.display = (byCat && bySub && byQ && byDiff) ? "" : "none";
+    });
+  }
+
+  function recalcAll() {
+    var rows = Array.from(tbody.querySelectorAll(".inv-row"));
+    var counted = 0;
+    var diffs = 0;
+    rows.forEach(function (tr) {
+      if (rowActualQty(tr) !== null) counted++;
+      var d = paintDiff(tr);
+      if (d !== null && Math.abs(d) > 0.000001) diffs++;
+    });
+    if (summary) {
+      summary.textContent = "Позиций: " + rows.length + " · Указано: " + counted + " · Расхождений: " + diffs;
+    }
+    filterRows();
+  }
+
+  if (!formLocked) {
+    tbody.addEventListener("input", function (e) {
+      if (!e.target.matches(".inv-actual-input")) return;
+      recalcAll();
+    });
+    if (saveDraftBtn) saveDraftBtn.addEventListener("click", function () { actionInput.value = "save_draft"; });
+    if (postBtn) postBtn.addEventListener("click", function () { actionInput.value = "post"; });
+  }
+
+  if (searchInput) searchInput.addEventListener("input", function () { recalcAll(); });
+  if (categorySel) categorySel.addEventListener("change", function () { recalcAll(); });
+  if (subcategorySel) subcategorySel.addEventListener("change", function () { recalcAll(); });
+  if (onlyDiff) onlyDiff.addEventListener("change", function () { recalcAll(); });
+
+  recalcAll();
+})();
+</script>
+
+{% endblock %}

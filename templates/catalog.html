@@ -1,0 +1,271 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="page">
+  <div class="page-head" style="margin-bottom:14px;">
+    <h2>Каталог</h2>
+    <a class="btn btn-sm btn-ghost" href="/products">
+      <span class="material-icons-outlined" style="font-size:16px;">list</span> Таблица товаров
+    </a>
+  </div>
+  <div class="catalog-ws">
+
+    <section class="catalog-col catalog-col--cat" id="catCol">
+      <div class="catalog-col__head">
+        <h3>Категории</h3>
+      </div>
+      <ul class="catalog-list" id="catList">
+        {% for c in categories %}
+        <li class="catalog-item" data-id="{{ c['id'] }}">
+          <span class="catalog-item__name">{{ c["name"] }}</span>
+          {% if not is_viewer_role %}
+          <button type="button" class="catalog-item__edit" title="Переименовать"><span class="material-icons-outlined">edit</span></button>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      {% if not is_viewer_role %}
+      <div class="catalog-col__add">
+        <input id="catAddInput" placeholder="Новая категория…">
+        <button class="btn btn-sm btn-primary" id="catAddBtn" type="button">+</button>
+      </div>
+      {% endif %}
+    </section>
+
+    <section class="catalog-col catalog-col--sub" id="subCol">
+      <div class="catalog-col__head">
+        <h3>Подкатегории</h3>
+        <span class="muted" id="subColHint">Выберите категорию</span>
+      </div>
+      <ul class="catalog-list" id="subList">
+        {% for s in subcategories %}
+        <li class="catalog-item" data-id="{{ s['id'] }}" data-category-id="{{ s['category_id'] }}" style="display:none;">
+          <span class="catalog-item__name">{{ s["name"] }}</span>
+          {% if not is_viewer_role %}
+          <button type="button" class="catalog-item__edit" title="Переименовать"><span class="material-icons-outlined">edit</span></button>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      {% if not is_viewer_role %}
+      <div class="catalog-col__add" style="display:none;" id="subAddWrap">
+        <input id="subAddInput" placeholder="Новая подкатегория…">
+        <button class="btn btn-sm btn-primary" id="subAddBtn" type="button">+</button>
+      </div>
+      {% endif %}
+    </section>
+
+    <section class="catalog-col catalog-col--prod" id="prodCol">
+      <div class="catalog-col__head">
+        <h3>Товары</h3>
+        <span class="muted" id="prodColHint">Выберите подкатегорию</span>
+      </div>
+      <div class="catalog-products" id="prodGrid">
+        {% for p in products %}
+        <div class="catalog-product-card" data-subcategory-id="{{ p['subcategory_id'] }}" data-category-id="{{ p['category_id'] }}" style="display:none;">
+          {% if p["image_path"] %}
+          <img class="catalog-product-card__img" src="{{ p['image_path'] }}" alt="">
+          {% else %}
+          <div class="catalog-product-card__img catalog-product-card__img--empty">
+            <span class="material-icons-outlined">inventory_2</span>
+          </div>
+          {% endif %}
+          <div class="catalog-product-card__body">
+            <div class="catalog-product-card__name">{{ p["name"] }}</div>
+            <div class="catalog-product-card__meta">
+              <span class="muted">{{ p["sku"] or "—" }}</span>
+              <span class="chip {{ 'chip--success' if p['balance'] > 0 else 'chip--danger' }}">{{ fmt_qty(p["balance"]) }} {{ p["unit"] }}</span>
+            </div>
+          </div>
+          <div class="catalog-product-card__actions">
+            <a class="btn btn-sm btn-ghost" href="/products/{{ p['id'] }}">
+              <span class="material-icons-outlined" style="font-size:16px;">edit</span>
+            </a>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      <div id="prodAddWrap" style="display:none;margin-top:10px;">
+        <a class="btn btn-sm btn-primary" href="/products" id="prodAddLink">
+          <span class="material-icons-outlined" style="font-size:16px;vertical-align:middle;">add</span> Добавить товар
+        </a>
+      </div>
+    </section>
+
+  </div>
+</div>
+
+<script>
+(function () {
+  var catList = document.getElementById("catList");
+  var subList = document.getElementById("subList");
+  var prodGrid = document.getElementById("prodGrid");
+  var subColHint = document.getElementById("subColHint");
+  var prodColHint = document.getElementById("prodColHint");
+  var subAddWrap = document.getElementById("subAddWrap");
+  var prodAddWrap = document.getElementById("prodAddWrap");
+  var catAddInput = document.getElementById("catAddInput") || {};
+  var catAddBtn = document.getElementById("catAddBtn");
+  var subAddInput = document.getElementById("subAddInput") || {};
+  var subAddBtn = document.getElementById("subAddBtn");
+
+  var activeCatId = null;
+  var activeSubId = null;
+
+  function firstVisibleSubcategoryId() {
+    var first = null;
+    Array.from(subList.children).some(function (li) {
+      if (li.style.display === "none") return false;
+      first = li.getAttribute("data-id");
+      return true;
+    });
+    return first;
+  }
+
+  function selectCategory(id) {
+    activeCatId = id;
+    activeSubId = null;
+    Array.from(catList.children).forEach(function (li) {
+      li.classList.toggle("catalog-item--active", li.getAttribute("data-id") === String(id));
+    });
+    Array.from(subList.children).forEach(function (li) {
+      var show = li.getAttribute("data-category-id") === String(id);
+      li.style.display = show ? "" : "none";
+      li.classList.remove("catalog-item--active");
+    });
+    subColHint.style.display = "none";
+    if (subAddWrap) subAddWrap.style.display = "";
+    Array.from(prodGrid.children).forEach(function (el) { el.style.display = "none"; });
+    prodColHint.style.display = "";
+    prodColHint.textContent = "Выберите подкатегорию";
+    if (prodAddWrap) prodAddWrap.style.display = "none";
+    var firstSub = firstVisibleSubcategoryId();
+    if (firstSub) selectSubcategory(firstSub);
+  }
+
+  function selectSubcategory(id) {
+    activeSubId = id;
+    Array.from(subList.children).forEach(function (li) {
+      li.classList.toggle("catalog-item--active", li.getAttribute("data-id") === String(id));
+    });
+    var count = 0;
+    Array.from(prodGrid.children).forEach(function (el) {
+      var show = el.getAttribute("data-subcategory-id") === String(id);
+      el.style.display = show ? "" : "none";
+      if (show) count++;
+    });
+    prodColHint.style.display = count > 0 ? "none" : "";
+    prodColHint.textContent = count > 0 ? "" : "Нет товаров";
+    if (prodAddWrap) prodAddWrap.style.display = "";
+  }
+
+  catList.addEventListener("click", function (e) {
+    var li = e.target.closest(".catalog-item");
+    if (!li) return;
+    if (e.target.closest(".catalog-item__edit")) {
+      renameCategory(li);
+      return;
+    }
+    selectCategory(li.getAttribute("data-id"));
+  });
+
+  subList.addEventListener("click", function (e) {
+    var li = e.target.closest(".catalog-item");
+    if (!li) return;
+    if (e.target.closest(".catalog-item__edit")) {
+      renameSubcategory(li);
+      return;
+    }
+    selectSubcategory(li.getAttribute("data-id"));
+  });
+
+  function renameCategory(li) {
+    var nameEl = li.querySelector(".catalog-item__name");
+    var oldName = nameEl.textContent.trim();
+    var newName = prompt("Новое название категории:", oldName);
+    if (!newName || newName.trim() === oldName) return;
+    var fd = new FormData();
+    fd.append("action", "rename");
+    fd.append("id", li.getAttribute("data-id"));
+    fd.append("name", newName.trim());
+    fetch("/api/catalog/category", { method: "POST", body: fd, credentials: "same-origin" })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.ok) nameEl.textContent = d.name;
+        else alert(d.error || "Ошибка");
+      });
+  }
+
+  function renameSubcategory(li) {
+    var nameEl = li.querySelector(".catalog-item__name");
+    var oldName = nameEl.textContent.trim();
+    var newName = prompt("Новое название подкатегории:", oldName);
+    if (!newName || newName.trim() === oldName) return;
+    var fd = new FormData();
+    fd.append("action", "rename");
+    fd.append("id", li.getAttribute("data-id"));
+    fd.append("name", newName.trim());
+    fetch("/api/catalog/subcategory", { method: "POST", body: fd, credentials: "same-origin" })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.ok) nameEl.textContent = d.name;
+        else alert(d.error || "Ошибка");
+      });
+  }
+
+  if (catAddBtn) catAddBtn.addEventListener("click", function () {
+    var name = catAddInput.value.trim();
+    if (!name) return;
+    var fd = new FormData();
+    fd.append("action", "add");
+    fd.append("name", name);
+    fetch("/api/catalog/category", { method: "POST", body: fd, credentials: "same-origin" })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d.ok) { alert(d.error || "Ошибка"); return; }
+        var li = document.createElement("li");
+        li.className = "catalog-item";
+        li.setAttribute("data-id", d.id);
+        li.innerHTML = '<span class="catalog-item__name">' + d.name + '</span><button type="button" class="catalog-item__edit" title="Переименовать"><span class="material-icons-outlined">edit</span></button>';
+        catList.appendChild(li);
+        catAddInput.value = "";
+      });
+  });
+  if (catAddInput.addEventListener) catAddInput.addEventListener("keydown", function (e) { if (e.key === "Enter" && catAddBtn) catAddBtn.click(); });
+
+  if (subAddBtn) subAddBtn.addEventListener("click", function () {
+    if (!activeCatId) return;
+    var name = subAddInput.value.trim();
+    if (!name) return;
+    var fd = new FormData();
+    fd.append("action", "add");
+    fd.append("category_id", activeCatId);
+    fd.append("name", name);
+    fetch("/api/catalog/subcategory", { method: "POST", body: fd, credentials: "same-origin" })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d.ok) { alert(d.error || "Ошибка"); return; }
+        var li = document.createElement("li");
+        li.className = "catalog-item";
+        li.setAttribute("data-id", d.id);
+        li.setAttribute("data-category-id", d.category_id);
+        li.innerHTML = '<span class="catalog-item__name">' + d.name + '</span><button type="button" class="catalog-item__edit" title="Переименовать"><span class="material-icons-outlined">edit</span></button>';
+        subList.appendChild(li);
+        subAddInput.value = "";
+      });
+  });
+  if (subAddInput.addEventListener) subAddInput.addEventListener("keydown", function (e) { if (e.key === "Enter" && subAddBtn) subAddBtn.click(); });
+
+  (function initWorkspaceSelection() {
+    var firstCat = catList.querySelector(".catalog-item");
+    if (!firstCat) {
+      subColHint.textContent = "Нет категорий";
+      prodColHint.textContent = "Добавьте категорию и подкатегорию";
+      return;
+    }
+    selectCategory(firstCat.getAttribute("data-id"));
+  })();
+})();
+</script>
+
+{% endblock %}

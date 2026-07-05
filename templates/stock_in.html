@@ -1,0 +1,288 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="page">
+  <div class="card">
+    <div style="margin-bottom:6px;">
+      <a class="btn btn-sm btn-ghost" href="/stock/in/docs">
+        <span class="material-icons-outlined" style="font-size:16px;vertical-align:middle;">arrow_back</span>
+        К списку документов
+      </a>
+    </div>
+    <div class="page-head">
+      <div>
+        <h2 style="margin-bottom:2px;">Приход товара</h2>
+        {% if doc %}
+        <div class="muted">{{ doc["doc_no"] }} · <span class="chip {{ 'chip--success' if doc['status'] == 'posted' else 'chip--warning' }}">{{ "Черновик" if doc["status"] == "draft" else "Проведён" }}</span></div>
+        {% else %}
+        <div class="muted">Новый документ · № {{ next_doc_no or "IN-00001" }}</div>
+        {% endif %}
+      </div>
+      {% if doc %}
+      <a class="btn btn-sm btn-ghost" href="/stock/in/pdf?doc_id={{ doc['id'] }}" target="_blank" rel="noopener" title="Скачать PDF для печати">
+        <span class="material-icons-outlined" style="font-size:18px;vertical-align:middle;">picture_as_pdf</span>
+        PDF
+      </a>
+      {% endif %}
+    </div>
+
+    {% if error %}
+    <div class="error">{{ error }}</div>
+    {% endif %}
+
+    {% set is_posted = doc and doc["status"] == "posted" %}
+    {% set can_edit_posted = can_edit_posted|default(false) %}
+    {% set form_locked = is_posted and not can_edit_posted %}
+
+    <form method="post" id="stockInDocForm">
+      {% if doc %}<input type="hidden" name="doc_id" value="{{ doc['id'] }}">{% endif %}
+      <input type="hidden" name="action" id="stockInAction" value="save_draft">
+
+      <div class="stockout-layout">
+
+        <aside class="stockout-panel" {% if form_locked %}style="opacity:0.5;pointer-events:none;"{% endif %}>
+          <h3 style="margin-bottom:8px;">Подбор товара</h3>
+          <div style="margin-bottom:6px;">
+            <input id="stockInSearch" placeholder="Поиск товара…" style="font-size:13px;">
+          </div>
+          <div class="form-grid--2" style="gap:8px; margin-bottom:6px;">
+            <div>
+              <select id="stockInCategory" style="font-size:12px; padding:6px 8px;">
+                <option value="">Все категории</option>
+                {% for c in categories %}<option value="{{ c['id'] }}">{{ c["name"] }}</option>{% endfor %}
+              </select>
+            </div>
+            <div>
+              <select id="stockInSubcategory" style="font-size:12px; padding:6px 8px;">
+                <option value="">Все подкат.</option>
+                {% for s in subcategories %}<option value="{{ s['id'] }}" data-category-id="{{ s['category_id'] }}">{{ s["name"] }}</option>{% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="stockout-pick-list" id="stockInPickList">
+            {% for p in products %}
+            <div class="stockout-pick-item {% if not p['is_active'] %}stockout-pick-item--inactive{% endif %}" data-id="{{ p['id'] }}" data-category-id="{{ p['category_id'] }}" data-subcategory-id="{{ p['subcategory_id'] }}" data-unit="{{ p['unit'] or 'шт' }}" data-name="{{ p['name'] }}" data-sku="{{ p['sku'] or '' }}" data-img="{{ p['image_path'] or '' }}">
+              {% if p['image_path'] %}
+              <img class="stockout-pick-item__img" src="{{ p['image_path'] }}" alt="">
+              {% else %}
+              <div class="stockout-pick-item__img stockout-pick-item__img--empty">
+                <span class="material-icons-outlined">inventory_2</span>
+              </div>
+              {% endif %}
+              <div class="stockout-pick-item__info">
+                <div class="stockout-pick-item__name">{{ p["name"] }}</div>
+                <div class="stockout-pick-item__meta">{{ p["sku"] or "—" }} · {{ p["unit"] or "шт" }}{% if not p['is_active'] %} · неактивен{% endif %}</div>
+              </div>
+            </div>
+            {% endfor %}
+            {% if not products %}
+            <div class="stockout-panel-hint">Нет товаров. Добавьте товар в разделе "Товары".</div>
+            {% endif %}
+          </div>
+          <div style="display:flex; gap:8px; align-items:end; margin-top:8px;">
+            <div style="flex:1;">
+              <label style="font-size:11px;">Кол-во</label>
+              <input id="stockInQtyPick" type="number" step="0.01" min="0.01" value="1" style="padding:8px;">
+            </div>
+            <button class="btn btn-primary" type="button" id="stockInAddItemBtn" style="white-space:nowrap;">
+              <span class="material-icons-outlined" style="font-size:16px;">add</span> Добавить
+            </button>
+          </div>
+        </aside>
+
+        <section class="stockout-main">
+          <div class="stockout-toolbar" style="grid-template-columns: 220px 1fr;">
+            <div>
+              <label>Дата</label>
+              <input type="datetime-local" name="created_at" step="1" value="{{ (doc and dt_local_for_input(doc['created_at'])) or now_local }}" {% if form_locked %}readonly{% endif %}>
+            </div>
+            <div class="stockout-note">
+              <label>Примечание</label>
+              <input name="note" placeholder="Комментарий" value="{{ (doc and doc.get('note')) or '' }}" {% if form_locked %}readonly{% endif %}>
+            </div>
+          </div>
+
+          <div class="stockout-table-wrap">
+            <div class="stockout-table-head">
+              <h3>Позиции документа</h3>
+              <div class="muted" id="stockInTotals">Позиций: 0 · Итого: 0</div>
+            </div>
+            <div class="table-wrap">
+              <table id="stockInItemsTable" class="stockout-table">
+                <thead>
+                  <tr>
+                    <th>Товар</th>
+                    <th class="right" style="width:120px;">Кол-во</th>
+                    <th style="width:60px;">Ед.</th>
+                    <th style="width:50px;"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for it in items or [] %}
+                  <tr>
+                    <td>
+                      {% if it.get("image_path") %}<img src="{{ it['image_path'] }}" class="stockout-item-row-img" alt="">{% endif %}
+                      {{ it["product_name"] }} <span class="muted">({{ it["sku"] or "-" }})</span>
+                      <input type="hidden" name="product_id[]" value="{{ it['product_id'] }}">
+                    </td>
+                    <td class="right">
+                      <input name="qty[]" class="stockout-qty-input" type="number" min="0.01" step="0.01" value="{{ it['qty'] }}" {% if form_locked %}readonly{% endif %}>
+                    </td>
+                    <td>{{ it["unit"] or "шт" }}</td>
+                    <td>{% if not form_locked %}<button type="button" class="btn btn-icon btn-danger js-remove-line"><span class="material-icons-outlined">delete</span></button>{% endif %}</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {% if not is_viewer_role and not is_posted %}
+          <div class="stockout-actions">
+            <button class="btn btn-ghost" type="submit" id="saveDraftBtn">Сохранить черновик</button>
+            <button class="btn btn-primary" type="submit" id="postDocBtn">Провести</button>
+          </div>
+          {% elif can_edit_posted %}
+          <div class="stockout-actions">
+            <button class="btn btn-primary" type="submit" id="updatePostedBtn">Сохранить изменения</button>
+          </div>
+          <div class="muted" style="padding:4px 0;">Проведённый документ. Изменения пересчитают складские движения.</div>
+          {% elif is_posted %}
+          <div class="stockout-actions">
+            <div class="muted" style="padding:8px 0;">Документ проведён. Редактирование недоступно.</div>
+          </div>
+          {% endif %}
+        </section>
+
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+(function () {
+  var categorySel = document.getElementById("stockInCategory");
+  var subcategorySel = document.getElementById("stockInSubcategory");
+  var searchInput = document.getElementById("stockInSearch");
+  var pickList = document.getElementById("stockInPickList");
+  var qtyInput = document.getElementById("stockInQtyPick");
+  var addBtn = document.getElementById("stockInAddItemBtn");
+  var tbody = document.querySelector("#stockInItemsTable tbody");
+  var totals = document.getElementById("stockInTotals");
+  var actionInput = document.getElementById("stockInAction");
+  var saveDraftBtn = document.getElementById("saveDraftBtn");
+  var postBtn = document.getElementById("postDocBtn");
+  var updatePostedBtn = document.getElementById("updatePostedBtn");
+
+  var selectedItem = null;
+
+  function formatQty(v) {
+    var n = Number(v || 0);
+    if (!Number.isFinite(n)) return "0";
+    if (Math.round(n) === n) return String(Math.round(n));
+    return n.toFixed(2);
+  }
+
+  function filterProducts() {
+    var cid = categorySel.value || "";
+    var q = (searchInput.value || "").toLowerCase().trim();
+
+    Array.from(subcategorySel.options).forEach(function (opt) {
+      if (!opt.value) return;
+      var ok = !cid || opt.getAttribute("data-category-id") === cid;
+      opt.hidden = !ok;
+      if (!ok && opt.selected) opt.selected = false;
+    });
+
+    var sid = subcategorySel.value || "";
+    var firstVisible = null;
+
+    Array.from(pickList.children).forEach(function (el) {
+      var byCat = !cid || el.getAttribute("data-category-id") === cid;
+      var bySub = !sid || el.getAttribute("data-subcategory-id") === sid;
+      var byQ = !q || (el.getAttribute("data-name") || "").toLowerCase().indexOf(q) >= 0
+                    || (el.getAttribute("data-sku") || "").toLowerCase().indexOf(q) >= 0;
+      var visible = byCat && bySub && byQ;
+      el.style.display = visible ? "" : "none";
+      if (!firstVisible && visible) firstVisible = el;
+    });
+
+    if (selectedItem && selectedItem.style.display === "none") {
+      selectedItem.classList.remove("is-selected");
+      selectedItem = null;
+    }
+    if (!selectedItem && firstVisible) {
+      firstVisible.classList.add("is-selected");
+      selectedItem = firstVisible;
+    }
+  }
+
+  pickList.addEventListener("click", function (e) {
+    var item = e.target.closest(".stockout-pick-item");
+    if (!item) return;
+    Array.from(pickList.children).forEach(function (el) { el.classList.remove("is-selected"); });
+    item.classList.add("is-selected");
+    selectedItem = item;
+  });
+
+  function addRow() {
+    if (!selectedItem) return;
+    var qty = Number(qtyInput.value || "0");
+    if (!qty || qty <= 0) return;
+    var pid = selectedItem.getAttribute("data-id");
+    var name = selectedItem.getAttribute("data-name");
+    var sku = selectedItem.getAttribute("data-sku") || "-";
+    var unit = selectedItem.getAttribute("data-unit") || "шт";
+    var img = selectedItem.getAttribute("data-img") || "";
+    var imgHtml = img ? '<img src="' + img + '" class="stockout-item-row-img" alt="">' : '';
+    var tr = document.createElement("tr");
+    tr.innerHTML =
+      '<td>' + imgHtml + name + ' <span class="muted">(' + sku + ')</span><input type="hidden" name="product_id[]" value="' + pid + '"></td>' +
+      '<td class="right"><input name="qty[]" class="stockout-qty-input" type="number" min="0.01" step="0.01" value="' + qty + '"></td>' +
+      '<td>' + unit + '</td>' +
+      '<td><button type="button" class="btn btn-icon btn-danger js-remove-line"><span class="material-icons-outlined">delete</span></button></td>';
+    tbody.appendChild(tr);
+    recalcTotals();
+  }
+
+  function recalcTotals() {
+    var rows = Array.from(tbody.querySelectorAll("tr"));
+    var total = 0;
+    rows.forEach(function (tr) {
+      var qty = Number((tr.querySelector('input[name="qty[]"]') || {}).value || 0);
+      if (Number.isFinite(qty) && qty > 0) total += qty;
+    });
+    totals.textContent = "Позиций: " + rows.length + " · Итого: " + formatQty(total);
+  }
+
+  addBtn.addEventListener("click", addRow);
+  pickList.addEventListener("dblclick", function (e) {
+    var item = e.target.closest(".stockout-pick-item");
+    if (!item) return;
+    selectedItem = item;
+    addRow();
+  });
+  tbody.addEventListener("click", function (e) {
+    var btn = e.target.closest(".js-remove-line");
+    if (!btn) return;
+    var tr = btn.closest("tr");
+    if (tr) tr.remove();
+    recalcTotals();
+  });
+  tbody.addEventListener("input", function (e) {
+    if (!e.target.matches('input[name="qty[]"]')) return;
+    recalcTotals();
+  });
+  categorySel.addEventListener("change", filterProducts);
+  subcategorySel.addEventListener("change", filterProducts);
+  searchInput.addEventListener("input", filterProducts);
+  if (saveDraftBtn) saveDraftBtn.addEventListener("click", function () { actionInput.value = "save_draft"; });
+  if (postBtn) postBtn.addEventListener("click", function () { actionInput.value = "post"; });
+  if (updatePostedBtn) updatePostedBtn.addEventListener("click", function () { actionInput.value = "update_posted"; });
+
+  filterProducts();
+  recalcTotals();
+})();
+</script>
+
+{% endblock %}

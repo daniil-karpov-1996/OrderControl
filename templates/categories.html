@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page">
+
+  <div class="card">
+    <div class="page-head">
+      <h2>Категории</h2>
+    </div>
+
+    {% if not is_viewer_role %}
+    {% if error %}
+    <div class="error">{{ error }}</div>
+    {% endif %}
+
+    <form method="post" action="/categories" class="form-grid--3">
+      <div>
+        <label>Название *</label>
+        <input name="name" placeholder="Например: Электроника" required value="{{ form.get('name', '') }}">
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" type="submit">
+          <span class="material-icons-outlined" style="font-size:16px;">add</span>
+          Добавить
+        </button>
+      </div>
+    </form>
+    {% endif %}
+  </div>
+
+  {% set next_dir_created = "desc" if sort == "created" and dir == "asc" else "asc" %}
+  {% set next_dir_name = "desc" if sort == "name" and dir == "asc" else "asc" %}
+  {% set next_dir_sub = "desc" if sort == "subcategories" and dir == "asc" else "asc" %}
+
+  <div class="card">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 18%;">
+              <a class="sort" href="/categories?sort=created&dir={{ next_dir_created }}&page=1&per_page={{ per_page }}">
+                Создана {% if sort == "created" %}{% if dir == "asc" %}⬆{% else %}⬇{% endif %}{% else %}⇅{% endif %}
+              </a>
+            </th>
+            <th style="width: 45%;">
+              <a class="sort" href="/categories?sort=name&dir={{ next_dir_name }}&page=1&per_page={{ per_page }}">
+                Название {% if sort == "name" %}{% if dir == "asc" %}⬆{% else %}⬇{% endif %}{% else %}⇅{% endif %}
+              </a>
+            </th>
+            <th class="right" style="width: 18%;">
+              <a class="sort" href="/categories?sort=subcategories&dir={{ next_dir_sub }}&page=1&per_page={{ per_page }}">
+                Подкатегорий {% if sort == "subcategories" %}{% if dir == "asc" %}⬆{% else %}⬇{% endif %}{% else %}⇅{% endif %}
+              </a>
+            </th>
+            <th style="width: 8%;">-</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in categories %}
+          <tr>
+            <td class="muted">{{ fmt_dt(c["created_at"]) }}</td>
+            <td><strong>{{ c["name"] }}</strong></td>
+            <td class="right">{{ c["subcategory_count"] }}</td>
+            <td>
+              {% if not is_viewer_role %}
+              <a class="btn btn-edit btn-icon" href="/categories/{{ c['id'] }}?from_modal=1" title="Изменить"
+                data-open-modal data-modal-title="Редактирование категории">
+                <span class="material-icons-outlined">edit</span>
+              </a>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+          {% if not categories %}
+          <tr>
+            <td colspan="4" class="muted" style="text-align:center;padding:24px;">Категории не найдены</td>
+          </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if pages > 1 %}
+    <div class="pagination">
+      {% if page > 1 %}
+      <a class="btn btn-sm btn-ghost" href="/categories?sort={{ sort }}&dir={{ dir }}&page={{ page - 1 }}&per_page={{ per_page }}">← Назад</a>
+      {% else %}
+      <span></span>
+      {% endif %}
+      <span class="muted">Стр. {{ page }} / {{ pages }}</span>
+      {% if page < pages %}
+      <a class="btn btn-sm btn-ghost" href="/categories?sort={{ sort }}&dir={{ dir }}&page={{ page + 1 }}&per_page={{ per_page }}">Далее →</a>
+      {% else %}
+      <span></span>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+
+  <script>
+    (function () {
+      try {
+        if (window.self === window.top) return;
+        const url = new URL(window.location.href);
+        if (url.searchParams.get("from_modal") !== "1" || !window.parent) return;
+        const title = url.searchParams.get("toast_title");
+        const body = url.searchParams.get("toast_body");
+        if ((title || body) && window.parent.showToast) {
+          window.parent.showToast({
+            title: title || "",
+            body: body || "",
+            variant: url.searchParams.get("toast_variant") || "success",
+            timeoutMs: Number(url.searchParams.get("toast_timeout") || 10000) || 10000,
+            allowHtml: false,
+          });
+        }
+        if (window.parent.closeEditModal) {
+          window.parent.closeEditModal({ instant: true });
+        }
+      } catch (_) { }
+    })();
+  </script>
+
+</div>
+{% endblock %}

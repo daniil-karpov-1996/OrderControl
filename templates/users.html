@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="page">
+
+  <div class="card">
+    <div class="page-head">
+      <h2>Пользователи</h2>
+    </div>
+
+    {% if error %}
+    <div class="error">{{ error }}</div>
+    {% endif %}
+
+    {% if is_admin_role %}
+    <div class="section-title">Добавить пользователя</div>
+    {% set f = form or {} %}
+    <form method="post" class="form-grid--4">
+      <div>
+        <label>Логин *</label>
+        <input name="username" placeholder="Логин" required value="{{ f.get('username', '') }}">
+      </div>
+      <div>
+        <label>Пароль *</label>
+        <input name="password" type="password" placeholder="Пароль" required>
+      </div>
+      <div>
+        <label>Роль</label>
+        <select name="role" required>
+          <option value="admin" {% if f.get('role')=='admin' %}selected{% endif %}>Админ</option>
+          <option value="manager" {% if f.get('role')=='manager' %}selected{% endif %}>Менеджер</option>
+          <option value="viewer" {% if f.get('role','')=='viewer' %}selected{% endif %}>Читатель</option>
+        </select>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" type="submit">
+          <span class="material-icons-outlined" style="font-size:16px;">add</span>
+          Добавить
+        </button>
+      </div>
+    </form>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 18%;">Создан</th>
+            <th style="width: 25%;">Логин</th>
+            <th style="width: 18%;">Роль</th>
+            <th style="width: 14%;">Статус</th>
+            <th style="width: 8%;">-</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for u in users %}
+          <tr>
+            <td class="muted">{{ fmt_dt(u["created_at"]) if u.get("created_at") else "-" }}</td>
+            <td><strong>{{ u["username"] }}</strong></td>
+            <td>
+              {% if u["id"] == 1 %}
+              <span class="chip chip--success">Супер-админ</span>
+              {% elif (u.get("role") or "admin") == "admin" %}
+              Админ
+              {% elif u.get("role") == "manager" %}
+              Менеджер
+              {% elif u.get("role") == "viewer" %}
+              Читатель
+              {% else %}
+              {{ u.get("role") or "admin" }}
+              {% endif %}
+            </td>
+            <td>
+              {% if u["is_active"] %}
+              <span class="badge badge-positive">Активен</span>
+              {% else %}
+              <span class="badge badge-negative">Заблокирован</span>
+              {% endif %}
+            </td>
+            <td>
+              <a class="btn btn-edit btn-icon" href="/admins/{{ u['id'] }}?from_modal=1" title="Изменить"
+                data-open-modal data-modal-title="Редактирование пользователя">
+                <span class="material-icons-outlined">edit</span>
+              </a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      try {
+        if (window.self === window.top) return;
+        const url = new URL(window.location.href);
+        if (url.searchParams.get("from_modal") !== "1" || !window.parent) return;
+        const title = url.searchParams.get("toast_title");
+        const body = url.searchParams.get("toast_body");
+        if ((title || body) && window.parent.showToast) {
+          window.parent.showToast({
+            title: title || "",
+            body: body || "",
+            variant: url.searchParams.get("toast_variant") || "success",
+            timeoutMs: Number(url.searchParams.get("toast_timeout") || 10000) || 10000,
+            allowHtml: false,
+          });
+        }
+        if (window.parent.closeEditModal) {
+          window.parent.closeEditModal({ instant: true });
+        }
+      } catch (_) { }
+    })();
+  </script>
+
+</div>
+
+{% endblock %}

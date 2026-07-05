@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="page">
+
+  <div class="page-head" style="margin-bottom:14px;">
+    <h2>Склад</h2>
+    <div class="dash-actions" style="margin-bottom:0;">
+      <a class="dash-action-btn" href="/stock/in">
+        <span class="material-icons-outlined">add_circle_outline</span> Приход
+      </a>
+      <a class="dash-action-btn" href="/stock/out">
+        <span class="material-icons-outlined">remove_circle_outline</span> Отпуск
+      </a>
+      <a class="dash-action-btn" href="/catalog">
+        <span class="material-icons-outlined">category</span> Каталог
+      </a>
+    </div>
+  </div>
+
+  <div class="dash-grid">
+    <div class="dash-kpi">
+      <div class="dash-kpi__icon"><span class="material-icons-outlined">inventory_2</span></div>
+      <div class="dash-kpi__data">
+        <div class="dash-kpi__value">{{ total_products }}</div>
+        <div class="dash-kpi__label">Товаров</div>
+      </div>
+    </div>
+    <div class="dash-kpi">
+      <div class="dash-kpi__icon dash-kpi__icon--good"><span class="material-icons-outlined">check_circle</span></div>
+      <div class="dash-kpi__data">
+        <div class="dash-kpi__value">{{ products_with_stock }}</div>
+        <div class="dash-kpi__label">С остатком</div>
+      </div>
+    </div>
+    <div class="dash-kpi">
+      <div class="dash-kpi__icon dash-kpi__icon--bad"><span class="material-icons-outlined">warning</span></div>
+      <div class="dash-kpi__data">
+        <div class="dash-kpi__value">{{ low_stock_count }}</div>
+        <div class="dash-kpi__label">Ниже минимума</div>
+      </div>
+    </div>
+    <div class="dash-kpi">
+      <div class="dash-kpi__icon dash-kpi__icon--accent"><span class="material-icons-outlined">swap_vert</span></div>
+      <div class="dash-kpi__data">
+        <div class="dash-kpi__value">{{ today_moves_count }}</div>
+        <div class="dash-kpi__label">Операций сегодня</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="dash-two-col">
+    <div class="card">
+      <div class="card__header">
+        <h3>Последние документы</h3>
+      </div>
+      {% if recent_out_docs or recent_in_docs %}
+      <div class="dash-docs-list">
+        {% for d in recent_out_docs %}
+        <a class="dash-doc-item" href="/stock/out?doc_id={{ d['id'] }}">
+          <div class="dash-doc-item__icon">
+            <span class="material-icons-outlined">arrow_upward</span>
+          </div>
+          <div class="dash-doc-item__body">
+            <strong>{{ d["doc_no"] }}</strong>
+            <span class="muted">{{ d["client_name"] or "" }} · {{ d["item_count"] }} поз.</span>
+          </div>
+          {% if d["status"] == "posted" %}
+          <span class="chip chip--success">Проведён</span>
+          {% else %}
+          <span class="chip chip--warning">Черновик</span>
+          {% endif %}
+        </a>
+        {% endfor %}
+        {% for d in recent_in_docs %}
+        <a class="dash-doc-item" href="/stock/in?doc_id={{ d['id'] }}">
+          <div class="dash-doc-item__icon dash-doc-item__icon--in">
+            <span class="material-icons-outlined">arrow_downward</span>
+          </div>
+          <div class="dash-doc-item__body">
+            <strong>{{ d["doc_no"] }}</strong>
+            <span class="muted">{{ d["item_count"] }} поз.</span>
+          </div>
+          {% if d["status"] == "posted" %}
+          <span class="chip chip--success">Проведён</span>
+          {% else %}
+          <span class="chip chip--warning">Черновик</span>
+          {% endif %}
+        </a>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="muted" style="padding:16px;text-align:center;">Нет документов</div>
+      {% endif %}
+    </div>
+
+    <div class="card">
+      <div class="card__header">
+        <h3>Товары ниже минимума</h3>
+      </div>
+      {% if low_stock_products %}
+      <div class="dash-alerts-list">
+        {% for p in low_stock_products %}
+        <div class="dash-alert-item">
+          <div class="dash-alert-item__name">{{ p["name"] }}</div>
+          <div class="dash-alert-item__meta">
+            <span class="muted">{{ p["sku"] or "—" }}</span>
+            <span class="chip chip--danger">{{ fmt_qty(p["stock_balance"]) }} / {{ fmt_qty(p["min_stock"]) }} {{ p["unit"] }}</span>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="muted" style="padding:16px;text-align:center;">Все товары в норме</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card__header">
+      <h3>Последние операции</h3>
+      <a class="btn btn-sm btn-ghost" href="/stock/moves">Все операции</a>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:14%;">Дата</th>
+            <th style="width:10%;">Тип</th>
+            <th style="width:22%;">Товар</th>
+            <th style="width:18%;">Клиент</th>
+            <th class="right" style="width:10%;">Кол-во</th>
+            <th style="width:16%;">Пользователь</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for m in recent_moves %}
+          <tr>
+            <td class="muted">{{ fmt_dt(m["created_at"]) }}</td>
+            <td>
+              {% if m["move_type"] == "in" %}
+              <span class="chip chip--success">Приход</span>
+              {% else %}
+              <span class="chip chip--danger">Отпуск</span>
+              {% endif %}
+            </td>
+            <td>{{ m["product_name"] or "—" }}</td>
+            <td>{{ m["client_name"] or "—" }}</td>
+            <td class="right">{{ fmt_qty(m["qty"]) }}</td>
+            <td class="muted">{{ m["username"] or "—" }}</td>
+          </tr>
+          {% endfor %}
+          {% if not recent_moves %}
+          <tr>
+            <td colspan="6" class="muted" style="padding:16px;text-align:center;">Нет операций</td>
+          </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+{% endblock %}

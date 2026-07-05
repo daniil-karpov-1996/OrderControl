@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="page">
+
+  <div class="card">
+    <div class="page-head">
+      <h2>Редактирование товара</h2>
+    </div>
+
+    {% if error %}
+    <div class="error">{{ error }}</div>
+    {% endif %}
+
+    {% if not is_viewer_role %}
+    <form method="post" enctype="multipart/form-data" class="form-grid--3">
+      {% if request.args.get('from_modal') == '1' or request.form.get('from_modal') == '1' %}
+      <input type="hidden" name="from_modal" value="1">
+      {% endif %}
+      <div>
+        <label>Название *</label>
+        <input name="name" required value="{{ (form.get('name') if form else product['name']) }}">
+      </div>
+      <div>
+        <label>SKU (артикул)</label>
+        <input name="sku" value="{{ (form.get('sku') if form else product['sku'] or '') }}">
+      </div>
+      <div>
+        <label>Категория *</label>
+        <select name="category_id" id="productEditCategory" required>
+          <option value="">Выберите</option>
+          {% for c in categories %}
+          <option value="{{ c['id'] }}" {% if str(c['id']) == str(product['category_id']) %}selected{% endif %}>{{ c["name"] }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label>Подкатегория *</label>
+        <select name="subcategory_id" id="productEditSubcategory" required>
+          <option value="">Выберите</option>
+          {% for s in subcategories %}
+          <option value="{{ s['id'] }}" data-category-id="{{ s['category_id'] }}"
+            {% if str(s['id']) == str((form.get('subcategory_id') if form else product['subcategory_id']) or '') %}selected{% endif %}>
+            {{ s["name"] }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label>Ед. измерения</label>
+        <input name="unit" value="{{ (form.get('unit') if form else product['unit'] or 'шт') }}">
+      </div>
+      <div>
+        <label>Мин. остаток</label>
+        <input name="min_stock" type="number" step="0.01" min="0"
+          value="{{ (form.get('min_stock') if form else product['min_stock'] or 0) }}">
+      </div>
+      <div>
+        <label>Новое фото</label>
+        <input type="file" name="image" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp">
+      </div>
+      <div style="display:flex; align-items:center; padding-top:18px;">
+        <label class="check" style="margin:0; cursor:pointer;">
+          <input type="checkbox" name="remove_image" value="1">
+          Удалить текущее фото
+        </label>
+      </div>
+      <div class="form-actions">
+        <button class="btn" type="button" onclick="cancelEdit()">Отмена</button>
+        <button class="btn btn-primary" type="submit">Сохранить</button>
+      </div>
+    </form>
+    {% else %}
+    <div class="muted">Режим просмотра (viewer): редактирование отключено.</div>
+    {% endif %}
+
+    {% if product["image_path"] %}
+    <div style="margin-top:16px;">
+      <img src="{{ product['image_path'] }}" alt="" class="product-thumb product-thumb--lg">
+    </div>
+    {% endif %}
+    <div class="muted" style="margin-top:8px; font-size:12px;">
+      Создана: {{ fmt_dt(product["created_at"]) }}
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      const cat = document.getElementById("productEditCategory");
+      const sub = document.getElementById("productEditSubcategory");
+      if (!cat || !sub) return;
+      function syncSubcategories() {
+        const cid = cat.value || "";
+        Array.from(sub.options).forEach(function (opt) {
+          if (!opt.value) return;
+          const ok = !cid || opt.getAttribute("data-category-id") === cid;
+          opt.hidden = !ok;
+          if (!ok && opt.selected) opt.selected = false;
+        });
+      }
+      cat.addEventListener("change", syncSubcategories);
+      syncSubcategories();
+    })();
+
+    function cancelEdit() {
+      try {
+        if (window.self !== window.top && window.parent && window.parent.closeEditModal) {
+          window.parent.closeEditModal({ instant: true });
+          return;
+        }
+      } catch (_) { }
+      window.location.href = "/products";
+    }
+  </script>
+
+</div>
+
+{% endblock %}

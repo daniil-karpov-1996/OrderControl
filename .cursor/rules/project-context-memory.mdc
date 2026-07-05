@@ -1,0 +1,28 @@
+---
+description: Persistent project context and communication defaults
+alwaysApply: true
+---
+
+# Project Context Memory
+
+Use project docs and existing code as the primary source of truth before asking user to repeat context.
+
+## First sources to check
+
+- `README.md`
+- `.cursor/PROJECT_CONTEXT.md` (if present)
+- current `app/`, `templates/`, `static/` implementation
+
+## Communication defaults
+
+- Do not ask the user to re-explain what already exists in code/docs.
+- Ask questions only when there is a real ambiguity that blocks a safe change.
+- Keep replies concise and practical.
+
+## Implementation defaults
+
+- Reuse existing architecture and naming.
+- Prefer incremental edits over rewrites.
+- Preserve existing behavior unless user explicitly requests a change.
+- After edits, quickly verify that the updated paths still work together.
+

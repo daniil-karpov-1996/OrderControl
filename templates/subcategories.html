@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page">
+
+  <div class="card">
+    <div class="page-head">
+      <h2>Подкатегории</h2>
+    </div>
+
+    <form method="get" action="/subcategories" style="margin-bottom:14px;">
+      <div style="max-width:300px;">
+        <label>Категория</label>
+        <select name="category_id" onchange="this.form.submit()">
+          {% if not category_id %}
+          <option value="" selected>Выберите категорию</option>
+          {% endif %}
+          {% for c in categories_all %}
+          <option value="{{ c['id'] }}" {% if str(c['id']) == str(category_id) %}selected{% endif %}>{{ c["name"] }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </form>
+
+    {% if category_id %}
+    {% if not is_viewer_role %}
+    {% if error %}
+    <div class="error">{{ error }}</div>
+    {% endif %}
+
+    <form method="post" action="/subcategories" class="form-grid--3">
+      <input type="hidden" name="category_id" value="{{ category_id }}">
+      {% if request.args.get("return_to") %}
+      <input type="hidden" name="return_to" value="{{ request.args.get('return_to') }}">
+      {% endif %}
+      <div>
+        <label>Название *</label>
+        <input name="name" placeholder="Например: Смартфоны" required value="{{ form.get('name', '') }}">
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" type="submit">
+          <span class="material-icons-outlined" style="font-size:16px;">add</span>
+          Добавить
+        </button>
+      </div>
+    </form>
+    {% endif %}
+    {% else %}
+    <div class="empty-state">
+      <span class="material-icons-outlined">folder_open</span>
+      <div>Выберите категорию для просмотра подкатегорий</div>
+    </div>
+    {% endif %}
+  </div>
+
+  {% if category_id %}
+  {% set base_url = "/subcategories?category_id=" ~ category_id %}
+  {% set next_dir_created = "desc" if sort == "created" and dir == "asc" else "asc" %}
+  {% set next_dir_name = "desc" if sort == "name" and dir == "asc" else "asc" %}
+  {% set next_dir_products = "desc" if sort == "products" and dir == "asc" else "asc" %}
+
+  <div class="card">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 18%;">
+              <a class="sort" href="{{ base_url }}&sort=created&dir={{ next_dir_created }}&page=1&per_page={{ per_page }}">
+                Создана {% if sort == "created" %}{% if dir == "asc" %}⬆{% else %}⬇{% endif %}{% else %}⇅{% endif %}
+              </a>
+            </th>
+            <th style="width: 45%;">
+              <a class="sort" href="{{ base_url }}&sort=name&dir={{ next_dir_name }}&page=1&per_page={{ per_page }}">
+                Название {% if sort == "name" %}{% if dir == "asc" %}⬆{% else %}⬇{% endif %}{% else %}⇅{% endif %}
+              </a>
+            </th>
+            <th class="right" style="width: 18%;">
+              <a class="sort" href="{{ base_url }}&sort=products&dir={{ next_dir_products }}&page=1&per_page={{ per_page }}">
+                Товаров {% if sort == "products" %}{% if dir == "asc" %}⬆{% else %}⬇{% endif %}{% else %}⇅{% endif %}
+              </a>
+            </th>
+            <th style="width: 8%;">-</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in subcategories %}
+          <tr>
+            <td class="muted">{{ fmt_dt(s["created_at"]) }}</td>
+            <td><strong>{{ s["name"] }}</strong></td>
+            <td class="right">{{ s["product_count"] }}</td>
+            <td>
+              {% if not is_viewer_role %}
+              <a class="btn btn-edit btn-icon" href="/subcategories/{{ s['id'] }}?from_modal=1" title="Изменить"
+                data-open-modal data-modal-title="Редактирование подкатегории">
+                <span class="material-icons-outlined">edit</span>
+              </a>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+          {% if not subcategories %}
+          <tr>
+            <td colspan="4" class="muted" style="text-align:center;padding:24px;">Нет подкатегорий</td>
+          </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if pages > 1 %}
+    <div class="pagination">
+      {% if page > 1 %}
+      <a class="btn btn-sm btn-ghost" href="{{ base_url }}&sort={{ sort }}&dir={{ dir }}&page={{ page - 1 }}&per_page={{ per_page }}">← Назад</a>
+      {% else %}
+      <span></span>
+      {% endif %}
+      <span class="muted">Стр. {{ page }} / {{ pages }}</span>
+      {% if page < pages %}
+      <a class="btn btn-sm btn-ghost" href="{{ base_url }}&sort={{ sort }}&dir={{ dir }}&page={{ page + 1 }}&per_page={{ per_page }}">Далее →</a>
+      {% else %}
+      <span></span>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <script>
+    (function () {
+      try {
+        if (window.self === window.top) return;
+        const url = new URL(window.location.href);
+        if (url.searchParams.get("from_modal") !== "1" || !window.parent) return;
+        const title = url.searchParams.get("toast_title");
+        const body = url.searchParams.get("toast_body");
+        if ((title || body) && window.parent.showToast) {
+          window.parent.showToast({
+            title: title || "",
+            body: body || "",
+            variant: url.searchParams.get("toast_variant") || "success",
+            timeoutMs: Number(url.searchParams.get("toast_timeout") || 10000) || 10000,
+            allowHtml: false,
+          });
+        }
+        if (window.parent.closeEditModal) {
+          window.parent.closeEditModal({ instant: true });
+        }
+      } catch (_) { }
+    })();
+  </script>
+
+</div>
+{% endblock %}
