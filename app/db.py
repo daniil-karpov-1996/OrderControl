@@ -4,20 +4,41 @@ from settings import SQLITE_PATH
 from auth import hash_password
 
 
+def ensure_default_warehouse(conn: sqlite3.Connection) -> int:
+    row = fetchone(conn, "SELECT id FROM warehouses ORDER BY id LIMIT 1", ())
+    if row:
+        return int(row["id"])
+    cur = conn.execute(
+        "INSERT INTO warehouses(name, is_active) VALUES(?, 1)",
+        ("Основной склад",),
+    )
+    warehouse_id = int(cur.lastrowid)
+    cur.close()
+    return warehouse_id
+
+
 def ensure_default_admin(conn: sqlite3.Connection):
     row = fetchone(conn, "SELECT COUNT(*) AS c FROM users", ())
     c = int(row["c"]) if row else 0
     if c > 0:
         return
     conn.execute(
-        "INSERT INTO users(username, password_hash, is_active, role) VALUES(?,?,1,'admin')",
-        ("root", hash_password("root")),
+        "INSERT INTO users(username, password_hash, is_active, role, warehouse_id) VALUES(?,?,1,'admin',?)",
+        ("root", hash_password("root"), ensure_default_warehouse(conn)),
     )
 
 
 SCHEMA_SQL = """
 PRAGMA journal_mode=WAL;
 PRAGMA foreign_keys=ON;
+
+-- ================= WAREHOUSES =================
+CREATE TABLE IF NOT EXISTS warehouses (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT UNIQUE NOT NULL,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 
 -- ================= USERS =================
 CREATE TABLE IF NOT EXISTS users (
@@ -26,7 +47,9 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash TEXT NOT NULL,
   is_active INTEGER NOT NULL DEFAULT 1,
   role TEXT NOT NULL DEFAULT 'admin',
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  warehouse_id INTEGER,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY(warehouse_id) REFERENCES warehouses(id)
 );
 
 -- ================= LOGS =================
@@ -87,6 +110,8 @@ CREATE TABLE IF NOT EXISTS products (
   name TEXT NOT NULL,
   image_path TEXT,
   unit TEXT NOT NULL DEFAULT 'шт',
+  purchase_price REAL NOT NULL DEFAULT 0,
+  sale_price REAL NOT NULL DEFAULT 0,
   min_stock REAL NOT NULL DEFAULT 0,
   is_active INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -101,6 +126,7 @@ CREATE TABLE IF NOT EXISTS stock_moves (
   product_id INTEGER NOT NULL,
   client_id INTEGER,
   stock_out_doc_id INTEGER,
+  warehouse_id INTEGER,
   admin_id INTEGER NOT NULL,
   move_type TEXT NOT NULL CHECK(move_type IN ('in','out')),
   qty REAL NOT NULL CHECK(qty > 0),
@@ -109,6 +135,7 @@ CREATE TABLE IF NOT EXISTS stock_moves (
   FOREIGN KEY(product_id) REFERENCES products(id) ON DELETE CASCADE,
   FOREIGN KEY(client_id) REFERENCES clients(id),
   FOREIGN KEY(stock_out_doc_id) REFERENCES stock_out_docs(id) ON DELETE SET NULL,
+  FOREIGN KEY(warehouse_id) REFERENCES warehouses(id),
   FOREIGN KEY(admin_id) REFERENCES users(id)
 );
 
@@ -120,12 +147,14 @@ CREATE TABLE IF NOT EXISTS stock_out_docs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   doc_no TEXT UNIQUE NOT NULL,
   client_id INTEGER,
+  warehouse_id INTEGER,
   status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft', 'posted')),
   note TEXT,
   created_by INTEGER NOT NULL,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   posted_at TEXT,
   FOREIGN KEY(client_id) REFERENCES clients(id),
+  FOREIGN KEY(warehouse_id) REFERENCES warehouses(id),
   FOREIGN KEY(created_by) REFERENCES users(id)
 );
 
@@ -136,6 +165,7 @@ CREATE TABLE IF NOT EXISTS stock_out_items (
   doc_id INTEGER NOT NULL,
   product_id INTEGER NOT NULL,
   qty REAL NOT NULL CHECK(qty > 0),
+  unit_price REAL NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   FOREIGN KEY(doc_id) REFERENCES stock_out_docs(id) ON DELETE CASCADE,
   FOREIGN KEY(product_id) REFERENCES products(id) ON DELETE RESTRICT
@@ -148,11 +178,13 @@ CREATE INDEX IF NOT EXISTS idx_stock_out_items_product ON stock_out_items(produc
 CREATE TABLE IF NOT EXISTS stock_in_docs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   doc_no TEXT UNIQUE NOT NULL,
+  warehouse_id INTEGER,
   status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft', 'posted')),
   note TEXT,
   created_by INTEGER NOT NULL,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   posted_at TEXT,
+  FOREIGN KEY(warehouse_id) REFERENCES warehouses(id),
   FOREIGN KEY(created_by) REFERENCES users(id)
 );
 
@@ -163,6 +195,7 @@ CREATE TABLE IF NOT EXISTS stock_in_items (
   doc_id INTEGER NOT NULL,
   product_id INTEGER NOT NULL,
   qty REAL NOT NULL CHECK(qty > 0),
+  unit_price REAL NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   FOREIGN KEY(doc_id) REFERENCES stock_in_docs(id) ON DELETE CASCADE,
   FOREIGN KEY(product_id) REFERENCES products(id) ON DELETE RESTRICT
@@ -175,11 +208,13 @@ CREATE INDEX IF NOT EXISTS idx_stock_in_items_product ON stock_in_items(product_
 CREATE TABLE IF NOT EXISTS inventory_docs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   doc_no TEXT UNIQUE NOT NULL,
+  warehouse_id INTEGER,
   status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft', 'posted')),
   note TEXT,
   created_by INTEGER NOT NULL,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   posted_at TEXT,
+  FOREIGN KEY(warehouse_id) REFERENCES warehouses(id),
   FOREIGN KEY(created_by) REFERENCES users(id)
 );
 
@@ -232,12 +267,91 @@ class DB:
         # soft migrations
         if not _column_exists(cls.conn, "products", "image_path"):
             cls.conn.execute("ALTER TABLE products ADD COLUMN image_path TEXT")
+        if not _column_exists(cls.conn, "products", "purchase_price"):
+            cls.conn.execute("ALTER TABLE products ADD COLUMN purchase_price REAL NOT NULL DEFAULT 0")
+        if not _column_exists(cls.conn, "products", "sale_price"):
+            cls.conn.execute("ALTER TABLE products ADD COLUMN sale_price REAL NOT NULL DEFAULT 0")
+        if not _column_exists(cls.conn, "stock_in_items", "unit_price"):
+            cls.conn.execute("ALTER TABLE stock_in_items ADD COLUMN unit_price REAL NOT NULL DEFAULT 0")
+        if not _column_exists(cls.conn, "stock_out_items", "unit_price"):
+            cls.conn.execute("ALTER TABLE stock_out_items ADD COLUMN unit_price REAL NOT NULL DEFAULT 0")
         if not _column_exists(cls.conn, "stock_moves", "stock_out_doc_id"):
             cls.conn.execute("ALTER TABLE stock_moves ADD COLUMN stock_out_doc_id INTEGER")
         if not _column_exists(cls.conn, "stock_moves", "stock_in_doc_id"):
             cls.conn.execute("ALTER TABLE stock_moves ADD COLUMN stock_in_doc_id INTEGER")
         if not _column_exists(cls.conn, "stock_moves", "inventory_doc_id"):
             cls.conn.execute("ALTER TABLE stock_moves ADD COLUMN inventory_doc_id INTEGER")
+        if not _column_exists(cls.conn, "users", "warehouse_id"):
+            cls.conn.execute("ALTER TABLE users ADD COLUMN warehouse_id INTEGER")
+        if not _column_exists(cls.conn, "stock_in_docs", "warehouse_id"):
+            cls.conn.execute("ALTER TABLE stock_in_docs ADD COLUMN warehouse_id INTEGER")
+        if not _column_exists(cls.conn, "stock_out_docs", "warehouse_id"):
+            cls.conn.execute("ALTER TABLE stock_out_docs ADD COLUMN warehouse_id INTEGER")
+        if not _column_exists(cls.conn, "stock_moves", "warehouse_id"):
+            cls.conn.execute("ALTER TABLE stock_moves ADD COLUMN warehouse_id INTEGER")
+        if not _column_exists(cls.conn, "inventory_docs", "warehouse_id"):
+            cls.conn.execute("ALTER TABLE inventory_docs ADD COLUMN warehouse_id INTEGER")
+        cls.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_stock_moves_warehouse_product ON stock_moves(warehouse_id, product_id, created_at)"
+        )
+        cls.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_stock_out_docs_warehouse_created ON stock_out_docs(warehouse_id, created_at DESC)"
+        )
+        cls.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_stock_in_docs_warehouse_created ON stock_in_docs(warehouse_id, created_at DESC)"
+        )
+        cls.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_inventory_docs_warehouse_created ON inventory_docs(warehouse_id, created_at DESC)"
+        )
+        default_warehouse_id = ensure_default_warehouse(cls.conn)
+        cls.conn.execute(
+            "UPDATE users SET warehouse_id=? WHERE warehouse_id IS NULL",
+            (default_warehouse_id,),
+        )
+        cls.conn.execute(
+            """
+            UPDATE stock_in_docs
+            SET warehouse_id=COALESCE(
+              (SELECT warehouse_id FROM users WHERE users.id=stock_in_docs.created_by), ?
+            )
+            WHERE warehouse_id IS NULL
+            """,
+            (default_warehouse_id,),
+        )
+        cls.conn.execute(
+            """
+            UPDATE stock_out_docs
+            SET warehouse_id=COALESCE(
+              (SELECT warehouse_id FROM users WHERE users.id=stock_out_docs.created_by), ?
+            )
+            WHERE warehouse_id IS NULL
+            """,
+            (default_warehouse_id,),
+        )
+        cls.conn.execute(
+            """
+            UPDATE inventory_docs
+            SET warehouse_id=COALESCE(
+              (SELECT warehouse_id FROM users WHERE users.id=inventory_docs.created_by), ?
+            )
+            WHERE warehouse_id IS NULL
+            """,
+            (default_warehouse_id,),
+        )
+        cls.conn.execute(
+            """
+            UPDATE stock_moves
+            SET warehouse_id=COALESCE(
+              (SELECT warehouse_id FROM stock_in_docs WHERE stock_in_docs.id=stock_moves.stock_in_doc_id),
+              (SELECT warehouse_id FROM stock_out_docs WHERE stock_out_docs.id=stock_moves.stock_out_doc_id),
+              (SELECT warehouse_id FROM inventory_docs WHERE inventory_docs.id=stock_moves.inventory_doc_id),
+              (SELECT warehouse_id FROM users WHERE users.id=stock_moves.admin_id),
+              ?
+            )
+            WHERE warehouse_id IS NULL
+            """,
+            (default_warehouse_id,),
+        )
         ensure_default_admin(cls.conn)
         cls.conn.commit()
 

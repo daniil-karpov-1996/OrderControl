@@ -197,6 +197,34 @@ class FlaskBaseHandler:
     def is_role_viewer(self) -> bool:
         return (self.current_role or "") == "viewer"
 
+    @property
+    def current_warehouse_id(self) -> int | None:
+        if not self.current_admin_id:
+            return None
+        row = fetchone(
+            self.db,
+            "SELECT warehouse_id FROM users WHERE id=?",
+            (int(self.current_admin_id),),
+        )
+        if not row or row["warehouse_id"] is None:
+            return None
+        return int(row["warehouse_id"])
+
+    @property
+    def current_warehouse_name(self) -> str | None:
+        warehouse_id = self.current_warehouse_id
+        if warehouse_id is None:
+            return None
+        row = fetchone(self.db, "SELECT name FROM warehouses WHERE id=?", (warehouse_id,))
+        return row["name"] if row else None
+
+    def can_access_warehouse(self, warehouse_id) -> bool:
+        if self.is_role_admin:
+            return True
+        if warehouse_id is None or self.current_warehouse_id is None:
+            return False
+        return int(warehouse_id) == int(self.current_warehouse_id)
+
     def get_argument(self, name, default=""):
         v = request.values.get(name)
         if v is None:
@@ -219,6 +247,8 @@ class FlaskBaseHandler:
         kwargs.setdefault("is_admin_role", self.is_role_admin)
         kwargs.setdefault("is_manager_role", self.is_role_manager)
         kwargs.setdefault("is_viewer_role", self.is_role_viewer)
+        kwargs.setdefault("current_warehouse_id", self.current_warehouse_id)
+        kwargs.setdefault("current_warehouse_name", self.current_warehouse_name)
         kwargs.setdefault("now_local", _to_local(datetime.utcnow()).strftime("%Y-%m-%dT%H:%M"))
         kwargs.setdefault("fmt_dt", fmt_dt)
         kwargs.setdefault("fmt_money", fmt_money)
@@ -291,13 +321,25 @@ def admin_required(view_func):
     def wrapped(*args, **kwargs):
         if not session.get("admin_id"):
             return redirect(url_for("login"))
-        row = fetchone(g.db, "SELECT is_active FROM users WHERE id=?", (session["admin_id"],))
+        row = fetchone(
+            g.db,
+            "SELECT username, is_active, role FROM users WHERE id=?",
+            (session["admin_id"],),
+        )
         if not row or int(row["is_active"]) != 1:
             session.clear()
             return redirect(url_for("login"))
+        session["username"] = row["username"]
+        session["role"] = row["role"] or "viewer"
         h = FlaskBaseHandler()
         if h.is_role_viewer and request.method.upper() == "POST":
-            if not (request.path or "").startswith("/profile"):
+            viewer_post_paths = {
+                "/stock/in",
+                "/stock/out",
+                "/stock/inventory",
+            }
+            path = request.path or ""
+            if not path.startswith("/profile") and path not in viewer_post_paths:
                 abort(403)
         return view_func(*args, **kwargs)
 

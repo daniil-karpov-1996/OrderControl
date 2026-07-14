@@ -15,16 +15,17 @@
         {% if doc %}
         <div class="muted">{{ doc["doc_no"] }} · <span class="chip {{ 'chip--success' if is_posted else 'chip--warning' }}">{{ "Проведён" if is_posted else "Черновик" }}</span></div>
         {% else %}
-        <div class="muted">Новый документ · № {{ next_doc_no or "INV-00001" }}</div>
+        <div class="muted">Новый документ · № {{ next_doc_no or "INV-00001" }} · {{ current_warehouse_name or "-" }}</div>
         {% endif %}
       </div>
     </div>
 
-    {% set form_locked = is_posted or is_viewer_role %}
+    {% set can_edit_posted = can_edit_posted|default(false) %}
+    {% set form_locked = is_posted and not can_edit_posted %}
 
     <form method="post" id="inventoryForm">
       {% if doc %}<input type="hidden" name="doc_id" value="{{ doc['id'] }}">{% endif %}
-      <input type="hidden" name="action" id="inventoryAction" value="save_draft">
+      <input type="hidden" name="action" id="inventoryAction" value="{{ 'update_posted' if can_edit_posted else 'save_draft' }}">
 
       <div class="inventory-toolbar">
         <div>
@@ -119,12 +120,20 @@
 
       {% if not form_locked %}
       <div class="stockout-actions" style="margin-top:12px;">
+        {% if can_edit_posted %}
+        <button class="btn btn-primary" type="submit" id="invUpdatePostedBtn">Сохранить изменения</button>
+        {% else %}
         <button class="btn btn-ghost" type="submit" id="invSaveDraftBtn">Сохранить черновик</button>
+        {% if not is_viewer_role %}
         <button class="btn btn-primary" type="submit" id="invPostBtn">Провести инвентаризацию</button>
+        {% endif %}
+        {% endif %}
       </div>
+      {% if not can_edit_posted %}
       <div class="muted" style="padding:4px 0;">
         Укажите фактическое количество и сравните с остатком в системе. Проведение сохраняет результаты сверки и не меняет складские остатки.
       </div>
+      {% endif %}
       {% elif is_posted %}
       <div class="muted" style="padding:8px 0;">Документ проведён. Результаты сверки сохранены, остатки на складе не изменялись.</div>
       {% endif %}
@@ -145,6 +154,7 @@
   var actionInput = document.getElementById("inventoryAction");
   var saveDraftBtn = document.getElementById("invSaveDraftBtn");
   var postBtn = document.getElementById("invPostBtn");
+  var updatePostedBtn = document.getElementById("invUpdatePostedBtn");
   var formLocked = {{ form_locked|tojson }};
 
   function parseNum(v) {
@@ -254,6 +264,7 @@
     });
     if (saveDraftBtn) saveDraftBtn.addEventListener("click", function () { actionInput.value = "save_draft"; });
     if (postBtn) postBtn.addEventListener("click", function () { actionInput.value = "post"; });
+    if (updatePostedBtn) updatePostedBtn.addEventListener("click", function () { actionInput.value = "update_posted"; });
   }
 
   if (searchInput) searchInput.addEventListener("input", function () { recalcAll(); });

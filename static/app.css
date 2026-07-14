@@ -1465,6 +1465,37 @@ table {
   table-layout: fixed;
 }
 
+.stock-moves-table {
+  min-width: 1040px;
+}
+
+.stock-moves-table--admin {
+  min-width: 1180px;
+}
+
+.stock-moves-col-date { width: 13%; }
+.stock-moves-col-type { width: 8%; }
+.stock-moves-col-warehouse { width: 11%; }
+.stock-moves-col-product { width: 15%; }
+.stock-moves-col-sku { width: 8%; }
+.stock-moves-col-client { width: 12%; }
+.stock-moves-col-qty { width: 8%; }
+.stock-moves-col-note { width: 15%; }
+.stock-moves-col-author { width: 10%; }
+
+.stock-moves-table:not(.stock-moves-table--admin) .stock-moves-col-product { width: 17%; }
+.stock-moves-table:not(.stock-moves-table--admin) .stock-moves-col-sku { width: 10%; }
+.stock-moves-table:not(.stock-moves-table--admin) .stock-moves-col-client { width: 14%; }
+.stock-moves-table:not(.stock-moves-table--admin) .stock-moves-col-qty { width: 9%; }
+.stock-moves-table:not(.stock-moves-table--admin) .stock-moves-col-note { width: 16%; }
+.stock-moves-table:not(.stock-moves-table--admin) .stock-moves-col-author { width: 13%; }
+
+.stock-moves-table th,
+.stock-moves-table td {
+  vertical-align: middle;
+  overflow-wrap: anywhere;
+}
+
 #catTable,
 #topTable {
   width: 100%;

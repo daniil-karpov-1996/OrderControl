@@ -114,14 +114,6 @@ def _password_error(p: str) -> str | None:
         return "Пароль не задан"
     if len(p) < 8:
         return "Пароль должен быть не короче 8 символов"
-    if not re.fullmatch(r"[A-Za-z0-9!@#$%^&*()_\-+=\[\]{};:,.<>/?\\|`~]+", p):
-        return "Пароль должен содержать только латинские буквы, цифры и спецсимволы без пробелов"
-    if not re.search(r"[A-Z]", p):
-        return "В пароле должна быть хотя бы одна заглавная латинская буква"
-    if not re.search(r"[a-z]", p):
-        return "В пароле должна быть хотя бы одна строчная латинская буква"
-    if not re.search(r"[0-9!@#$%^&*()_\-+=\[\]{};:,.<>/?\\|`~]", p):
-        return "В пароле должна быть хотя бы одна цифра или спецсимвол"
     return None
 
 
@@ -137,7 +129,7 @@ def _phone_error(phone: str) -> str | None:
     return None
 
 
-def _get_stock_balance(db, product_id: int) -> float:
+def _get_stock_balance(db, product_id: int, warehouse_id: int) -> float:
     row = fetchone(
         db,
         """
@@ -146,9 +138,9 @@ def _get_stock_balance(db, product_id: int) -> float:
           - COALESCE(SUM(CASE WHEN move_type='out' THEN qty ELSE 0 END), 0)
           AS balance
         FROM stock_moves
-        WHERE product_id=?
+        WHERE product_id=? AND warehouse_id=?
         """,
-        (int(product_id),),
+        (int(product_id), int(warehouse_id)),
     )
     return float(row["balance"]) if row else 0.0
 
@@ -157,10 +149,13 @@ def _doc_line_items_snapshot(db, doc_id: int, doc_kind: str) -> list[dict]:
     table = "stock_in_items" if doc_kind == "in" else "stock_out_items"
     rows = fetchall(
         db,
-        f"SELECT product_id, qty FROM {table} WHERE doc_id=? ORDER BY id",
+        f"SELECT product_id, qty, unit_price FROM {table} WHERE doc_id=? ORDER BY id",
         (int(doc_id),),
     )
-    return [{"product_id": int(r["product_id"]), "qty": float(r["qty"])} for r in rows]
+    return [
+        {"product_id": int(r["product_id"]), "qty": float(r["qty"]), "unit_price": float(r["unit_price"] or 0)}
+        for r in rows
+    ]
 
 
 def _apply_stock_in_moves(
@@ -170,14 +165,15 @@ def _apply_stock_in_moves(
     admin_id: int,
     note: str | None,
     created_at_db: str | None,
+    warehouse_id: int,
 ) -> None:
     for pid, qty in line_items:
         db.execute(
             """
-            INSERT INTO stock_moves(product_id, client_id, stock_in_doc_id, admin_id, move_type, qty, note, created_at)
-            VALUES(?,NULL,?,?,'in',?,?, COALESCE(?, datetime('now')))
+            INSERT INTO stock_moves(product_id, client_id, stock_in_doc_id, warehouse_id, admin_id, move_type, qty, note, created_at)
+            VALUES(?,NULL,?,?,?,'in',?,?, COALESCE(?, datetime('now')))
             """,
-            (pid, doc_id, admin_id, qty, note, created_at_db),
+            (pid, doc_id, warehouse_id, admin_id, qty, note, created_at_db),
         )
 
 
@@ -189,14 +185,15 @@ def _apply_stock_out_moves(
     admin_id: int,
     note: str | None,
     created_at_db: str | None,
+    warehouse_id: int,
 ) -> None:
     for pid, qty in line_items:
         db.execute(
             """
-            INSERT INTO stock_moves(product_id, client_id, stock_out_doc_id, admin_id, move_type, qty, note, created_at)
-            VALUES(?,?,?,?,'out',?,?, COALESCE(?, datetime('now')))
+            INSERT INTO stock_moves(product_id, client_id, stock_out_doc_id, warehouse_id, admin_id, move_type, qty, note, created_at)
+            VALUES(?,?,?,?,?,'out',?,?, COALESCE(?, datetime('now')))
             """,
-            (pid, client_id, doc_id, admin_id, qty, note, created_at_db),
+            (pid, client_id, doc_id, warehouse_id, admin_id, qty, note, created_at_db),
         )
 
 
@@ -224,12 +221,14 @@ def _stock_out_single_category_error(db, product_ids: list[int]) -> str | None:
     )
 
 
-def _stock_out_qty_error(db, line_items: list[tuple[int, float]]) -> str | None:
+def _stock_out_qty_error(
+    db, line_items: list[tuple[int, float]], warehouse_id: int
+) -> str | None:
     totals: dict[int, float] = {}
     for pid, qty in line_items:
         totals[pid] = totals.get(pid, 0.0) + qty
     for pid, total_qty in totals.items():
-        balance = _get_stock_balance(db, pid)
+        balance = _get_stock_balance(db, pid, warehouse_id)
         if total_qty > balance:
             p = fetchone(db, "SELECT name, unit FROM products WHERE id=?", (pid,))
             pname = p["name"] if p else f"ID {pid}"
@@ -249,7 +248,7 @@ def _doc_qty_by_product(items: list[dict]) -> dict[int, float]:
     return out
 
 
-def _inventory_products_query_rows(db) -> list[dict]:
+def _inventory_products_query_rows(db, warehouse_id: int) -> list[dict]:
     rows = fetchall(
         db,
         """
@@ -262,11 +261,11 @@ def _inventory_products_query_rows(db) -> list[dict]:
         FROM products p
         JOIN subcategories sc ON sc.id = p.subcategory_id
         JOIN categories c ON c.id = sc.category_id
-        LEFT JOIN stock_moves sm ON sm.product_id = p.id
+        LEFT JOIN stock_moves sm ON sm.product_id = p.id AND sm.warehouse_id=?
         GROUP BY p.id
         ORDER BY c.name, sc.name, p.name
         """,
-        (),
+        (int(warehouse_id),),
     )
     return [dict(r) for r in rows]
 
@@ -309,30 +308,31 @@ def _apply_inventory_moves(
     admin_id: int,
     note: str | None,
     created_at_db: str | None,
+    warehouse_id: int,
 ) -> None:
     note_text = note or "Инвентаризация"
     for it in line_items:
         pid = int(it["product_id"])
-        live = _get_stock_balance(db, pid)
+        live = _get_stock_balance(db, pid, warehouse_id)
         diff = float(it["qty_actual"]) - live
         if abs(diff) < 1e-9:
             continue
         if diff > 0:
             db.execute(
                 """
-                INSERT INTO stock_moves(product_id, client_id, inventory_doc_id, admin_id, move_type, qty, note, created_at)
-                VALUES(?,NULL,?,?,'in',?,?, COALESCE(?, datetime('now')))
+                INSERT INTO stock_moves(product_id, client_id, inventory_doc_id, warehouse_id, admin_id, move_type, qty, note, created_at)
+                VALUES(?,NULL,?,?,?,'in',?,?, COALESCE(?, datetime('now')))
                 """,
-                (pid, doc_id, admin_id, diff, note_text, created_at_db),
+                (pid, doc_id, warehouse_id, admin_id, diff, note_text, created_at_db),
             )
         else:
             qty_out = abs(diff)
             db.execute(
                 """
-                INSERT INTO stock_moves(product_id, client_id, inventory_doc_id, admin_id, move_type, qty, note, created_at)
-                VALUES(?,NULL,?,?,'out',?,?, COALESCE(?, datetime('now')))
+                INSERT INTO stock_moves(product_id, client_id, inventory_doc_id, warehouse_id, admin_id, move_type, qty, note, created_at)
+                VALUES(?,NULL,?,?,?,'out',?,?, COALESCE(?, datetime('now')))
                 """,
-                (pid, doc_id, admin_id, qty_out, note_text, created_at_db),
+                (pid, doc_id, warehouse_id, admin_id, qty_out, note_text, created_at_db),
             )
 
 
@@ -340,13 +340,14 @@ def _inventory_page_products(
     db,
     doc: dict | None,
     saved_items: list[dict],
+    warehouse_id: int,
 ) -> list[dict]:
     if doc and (doc.get("status") or "") == "posted":
         return [dict(it) for it in saved_items]
 
     saved_map = {int(x["product_id"]): x for x in saved_items}
     result: list[dict] = []
-    for p in _inventory_products_query_rows(db):
+    for p in _inventory_products_query_rows(db, warehouse_id):
         row = dict(p)
         pid = int(row["id"])
         if pid in saved_map:
@@ -688,45 +689,59 @@ class ModalCloseHandler(AdminRequiredHandler):
 
 class DashboardHandler(AdminRequiredHandler):
     def get(self):
+        warehouse_id = self.current_warehouse_id
+        if warehouse_id is None:
+            abort(403)
+        scoped = not self.is_role_admin
+        move_join_scope = " AND sm.warehouse_id=?" if scoped else ""
+        move_scope = "WHERE sm.warehouse_id=?" if scoped else ""
+        doc_scope = "WHERE d.warehouse_id=?" if scoped else ""
+        scope_params = (warehouse_id,) if scoped else ()
         total_products = int(
             (fetchone(self.db, "SELECT COUNT(*) AS c FROM products WHERE is_active=1") or {"c": 0})["c"]
         )
 
         products_with_stock = int(
-            (fetchone(self.db, """
+            (fetchone(self.db, f"""
                 SELECT COUNT(*) AS c FROM (
                     SELECT p.id,
                         COALESCE(SUM(CASE WHEN sm.move_type='in' THEN sm.qty ELSE 0 END),0)
                         - COALESCE(SUM(CASE WHEN sm.move_type='out' THEN sm.qty ELSE 0 END),0) AS bal
                     FROM products p
-                    LEFT JOIN stock_moves sm ON sm.product_id = p.id
+                    LEFT JOIN stock_moves sm ON sm.product_id = p.id{move_join_scope}
                     WHERE p.is_active=1
                     GROUP BY p.id
                     HAVING bal > 0
                 )
-            """) or {"c": 0})["c"]
+            """, scope_params) or {"c": 0})["c"]
         )
 
         low_stock_products = fetchall(
             self.db,
-            """
+            f"""
             SELECT
               p.id, p.name, p.sku, p.unit, p.min_stock,
               COALESCE(SUM(CASE WHEN sm.move_type='in' THEN sm.qty ELSE 0 END), 0)
                 - COALESCE(SUM(CASE WHEN sm.move_type='out' THEN sm.qty ELSE 0 END), 0)
                 AS stock_balance
             FROM products p
-            LEFT JOIN stock_moves sm ON sm.product_id = p.id
+            LEFT JOIN stock_moves sm ON sm.product_id = p.id{move_join_scope}
             WHERE p.is_active = 1 AND p.min_stock > 0
             GROUP BY p.id
             HAVING stock_balance < p.min_stock
             ORDER BY (stock_balance - p.min_stock) ASC
             LIMIT 20
             """,
+            scope_params,
         )
 
         today_moves_count = int(
-            (fetchone(self.db, "SELECT COUNT(*) AS c FROM stock_moves WHERE date(created_at)=date('now')") or {"c": 0})["c"]
+            (fetchone(
+                self.db,
+                "SELECT COUNT(*) AS c FROM stock_moves sm WHERE date(sm.created_at)=date('now')"
+                + (" AND sm.warehouse_id=?" if scoped else ""),
+                scope_params,
+            ) or {"c": 0})["c"]
         )
 
         total_clients = int(
@@ -735,7 +750,7 @@ class DashboardHandler(AdminRequiredHandler):
 
         recent_moves = fetchall(
             self.db,
-            """
+            f"""
             SELECT
               sm.id, sm.move_type, sm.qty, sm.note, sm.created_at,
               p.name AS product_name, p.unit AS product_unit,
@@ -745,33 +760,39 @@ class DashboardHandler(AdminRequiredHandler):
             JOIN products p ON p.id = sm.product_id
             LEFT JOIN clients cl ON cl.id = sm.client_id
             LEFT JOIN users u ON u.id = sm.admin_id
+            {move_scope}
             ORDER BY sm.id DESC
             LIMIT 15
             """,
+            scope_params,
         )
 
         recent_out_docs = fetchall(
             self.db,
-            """
+            f"""
             SELECT d.id, d.doc_no, d.status, d.note, d.created_at,
                    cl.full_name AS client_name,
                    (SELECT COUNT(*) FROM stock_out_items i WHERE i.doc_id = d.id) AS item_count
             FROM stock_out_docs d
             LEFT JOIN clients cl ON cl.id = d.client_id
+            {doc_scope}
             ORDER BY d.created_at DESC
             LIMIT 8
             """,
+            scope_params,
         )
 
         recent_in_docs = fetchall(
             self.db,
-            """
+            f"""
             SELECT d.id, d.doc_no, d.status, d.note, d.created_at,
                    (SELECT COUNT(*) FROM stock_in_items i WHERE i.doc_id = d.id) AS item_count
             FROM stock_in_docs d
+            {doc_scope}
             ORDER BY d.created_at DESC
             LIMIT 8
             """,
+            scope_params,
         )
 
         return self.render(
@@ -1104,6 +1125,8 @@ class CategoriesHandler(AdminRequiredHandler):
         )
 
     def post(self):
+        if self.is_role_viewer:
+            abort(403)
         name = self.get_body_argument("name", "").strip()
 
         if not name:
@@ -1555,11 +1578,14 @@ class ApiSubcategoriesHandler(AdminRequiredHandler):
 
 class ApiProductsHandler(AdminRequiredHandler):
     def get(self):
+        warehouse_id = self.current_warehouse_id
+        if warehouse_id is None:
+            return jsonify({"items": []})
         category_id_raw = (self.get_argument("category_id", "") or "").strip()
         subcategory_id_raw = (self.get_argument("subcategory_id", "") or "").strip()
         q = (self.get_argument("q", "") or "").strip()
         where = ["p.is_active=1"]
-        params: list = []
+        params: list = [warehouse_id]
         if category_id_raw.isdigit():
             where.append("sc.category_id=?")
             params.append(int(category_id_raw))
@@ -1578,11 +1604,12 @@ class ApiProductsHandler(AdminRequiredHandler):
               p.name,
               p.sku,
               p.unit,
+              p.sale_price,
               COALESCE(SUM(CASE WHEN sm.move_type='in' THEN sm.qty ELSE 0 END),0)
                 - COALESCE(SUM(CASE WHEN sm.move_type='out' THEN sm.qty ELSE 0 END),0) AS balance
             FROM products p
             JOIN subcategories sc ON sc.id=p.subcategory_id
-            LEFT JOIN stock_moves sm ON sm.product_id=p.id
+            LEFT JOIN stock_moves sm ON sm.product_id=p.id AND sm.warehouse_id=?
             WHERE {" AND ".join(where)}
             GROUP BY p.id
             ORDER BY p.name
@@ -1597,6 +1624,7 @@ class ApiProductsHandler(AdminRequiredHandler):
                         "name": r["name"],
                         "sku": r["sku"] or "",
                         "unit": r["unit"] or "шт",
+                        "sale_price": float(r["sale_price"] or 0),
                         "balance": float(r["balance"] or 0),
                     }
                     for r in rows
@@ -1610,7 +1638,15 @@ class ApiStockBalanceHandler(AdminRequiredHandler):
         product_id_raw = (self.get_argument("product_id", "") or "").strip()
         if not product_id_raw.isdigit():
             return jsonify({"balance": 0})
-        return jsonify({"balance": _get_stock_balance(self.db, int(product_id_raw))})
+        if self.current_warehouse_id is None:
+            return jsonify({"balance": 0})
+        return jsonify(
+            {
+                "balance": _get_stock_balance(
+                    self.db, int(product_id_raw), self.current_warehouse_id
+                )
+            }
+        )
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1620,6 +1656,9 @@ class ApiStockBalanceHandler(AdminRequiredHandler):
 
 class ProductsHandler(AdminRequiredHandler):
     def get(self):
+        warehouse_id = self.current_warehouse_id
+        if warehouse_id is None:
+            abort(403)
         page = _clamp_int(self.get_argument("page", "1"), 1, 1, 10_000)
         per_page = _clamp_int(
             self.get_argument("per_page", str(LIST_DEFAULT_PER_PAGE)),
@@ -1688,6 +1727,8 @@ class ProductsHandler(AdminRequiredHandler):
               p.name,
               p.image_path,
               p.unit,
+              p.purchase_price,
+              p.sale_price,
               p.min_stock,
               p.is_active,
               p.created_at,
@@ -1700,13 +1741,13 @@ class ProductsHandler(AdminRequiredHandler):
             FROM products p
             JOIN subcategories sc ON sc.id = p.subcategory_id
             JOIN categories cat ON cat.id = sc.category_id
-            LEFT JOIN stock_moves sm ON sm.product_id = p.id
+            LEFT JOIN stock_moves sm ON sm.product_id = p.id AND sm.warehouse_id=?
             WHERE {where_sql}
             GROUP BY p.id
             ORDER BY {order_by}
             LIMIT ? OFFSET ?
             """,
-            tuple(params) + (per_page, offset),
+            (warehouse_id,) + tuple(params) + (per_page, offset),
         )
 
         categories = fetchall(
@@ -1737,12 +1778,16 @@ class ProductsHandler(AdminRequiredHandler):
         )
 
     def post(self):
+        if not self.is_role_admin:
+            abort(403)
         name = self.get_body_argument("name", "").strip()
         sku = self.get_body_argument("sku", "").strip() or None
         category_id_raw = self.get_body_argument("category_id", "").strip()
         subcategory_id_raw = self.get_body_argument("subcategory_id", "").strip()
         unit = self.get_body_argument("unit", "шт").strip() or "шт"
         min_stock_raw = self.get_body_argument("min_stock", "0").strip()
+        purchase_price_raw = self.get_body_argument("purchase_price", "0").strip()
+        sale_price_raw = self.get_body_argument("sale_price", "0").strip()
 
         if not name:
             return self.redirect(
@@ -1783,6 +1828,14 @@ class ProductsHandler(AdminRequiredHandler):
             min_stock = max(0.0, float(min_stock_raw))
         except Exception:
             min_stock = 0.0
+        try:
+            purchase_price = max(0.0, float(purchase_price_raw)) if self.is_role_admin else 0.0
+        except Exception:
+            purchase_price = 0.0
+        try:
+            sale_price = max(0.0, float(sale_price_raw))
+        except Exception:
+            sale_price = 0.0
 
         image_path = None
         try:
@@ -1800,10 +1853,10 @@ class ProductsHandler(AdminRequiredHandler):
         try:
             cur = self.db.execute(
                 """
-                INSERT INTO products(subcategory_id, sku, name, image_path, unit, min_stock)
-                VALUES(?,?,?,?,?,?)
+                INSERT INTO products(subcategory_id, sku, name, image_path, unit, purchase_price, sale_price, min_stock)
+                VALUES(?,?,?,?,?,?,?,?)
                 """,
-                (subcategory_id, sku, name, image_path, unit, min_stock),
+                (subcategory_id, sku, name, image_path, unit, purchase_price, sale_price, min_stock),
             )
             new_id = int(cur.lastrowid)
             cur.close()
@@ -1832,6 +1885,8 @@ class ProductsHandler(AdminRequiredHandler):
                 "image_path": image_path,
                 "subcategory_id": subcategory_id,
                 "unit": unit,
+                "purchase_price": purchase_price,
+                "sale_price": sale_price,
                 "min_stock": min_stock,
             },
             message=name,
@@ -1858,7 +1913,8 @@ class ProductEditHandler(AdminRequiredHandler):
             self.db,
             """
             SELECT
-              p.id, p.subcategory_id, p.sku, p.name, p.image_path, p.unit, p.min_stock, p.is_active, p.created_at,
+              p.id, p.subcategory_id, p.sku, p.name, p.image_path, p.unit,
+              p.purchase_price, p.sale_price, p.min_stock, p.is_active, p.created_at,
               sc.name AS subcategory_name,
               cat.name AS category_name,
               sc.category_id AS category_id
@@ -1872,7 +1928,9 @@ class ProductEditHandler(AdminRequiredHandler):
         if not product:
             abort(404)
 
-        balance = _get_stock_balance(self.db, int(product_id))
+        balance = _get_stock_balance(
+            self.db, int(product_id), self.current_warehouse_id
+        ) if self.current_warehouse_id is not None else 0.0
 
         categories = fetchall(
             self.db, "SELECT id, name FROM categories ORDER BY name", ()
@@ -1894,6 +1952,8 @@ class ProductEditHandler(AdminRequiredHandler):
         )
 
     def post(self, product_id: str):
+        if self.is_role_viewer:
+            abort(403)
         pid = int(product_id)
         name = self.get_body_argument("name", "").strip()
         sku = self.get_body_argument("sku", "").strip() or None
@@ -1901,12 +1961,14 @@ class ProductEditHandler(AdminRequiredHandler):
         subcategory_id_raw = self.get_body_argument("subcategory_id", "").strip()
         unit = self.get_body_argument("unit", "шт").strip() or "шт"
         min_stock_raw = self.get_body_argument("min_stock", "0").strip()
+        purchase_price_raw = self.get_body_argument("purchase_price", "0").strip()
+        sale_price_raw = self.get_body_argument("sale_price", "0").strip()
         remove_image = 1 if self.get_body_argument("remove_image", "") == "1" else 0
         is_active = 1 if self.get_body_argument("is_active", None) is not None else 0
 
         old = fetchone(
             self.db,
-            "SELECT subcategory_id, sku, name, image_path, unit, min_stock, is_active FROM products WHERE id=?",
+            "SELECT subcategory_id, sku, name, image_path, unit, purchase_price, sale_price, min_stock, is_active FROM products WHERE id=?",
             (pid,),
         )
         if not old:
@@ -1951,6 +2013,18 @@ class ProductEditHandler(AdminRequiredHandler):
             min_stock = max(0.0, float(min_stock_raw))
         except Exception:
             min_stock = 0.0
+        try:
+            purchase_price = (
+                max(0.0, float(purchase_price_raw))
+                if self.is_role_admin
+                else float(old["purchase_price"] or 0)
+            )
+        except Exception:
+            purchase_price = float(old["purchase_price"] or 0)
+        try:
+            sale_price = max(0.0, float(sale_price_raw))
+        except Exception:
+            sale_price = float(old["sale_price"] or 0)
 
         new_image_path = old["image_path"] or None
         uploaded_image = None
@@ -1976,6 +2050,8 @@ class ProductEditHandler(AdminRequiredHandler):
             and (old["image_path"] or None) == new_image_path
             and int(old["subcategory_id"]) == subcategory_id
             and (old["unit"] or "шт") == unit
+            and float(old["purchase_price"] or 0) == purchase_price
+            and float(old["sale_price"] or 0) == sale_price
             and float(old["min_stock"]) == min_stock
             and int(old["is_active"]) == is_active
         ):
@@ -1987,10 +2063,10 @@ class ProductEditHandler(AdminRequiredHandler):
             self.db.execute(
                 """
                 UPDATE products
-                SET name=?, sku=?, image_path=?, subcategory_id=?, unit=?, min_stock=?, is_active=?
+                SET name=?, sku=?, image_path=?, subcategory_id=?, unit=?, purchase_price=?, sale_price=?, min_stock=?, is_active=?
                 WHERE id=?
                 """,
-                (name, sku, new_image_path, subcategory_id, unit, min_stock, is_active, pid),
+                (name, sku, new_image_path, subcategory_id, unit, purchase_price, sale_price, min_stock, is_active, pid),
             )
             self.db.commit()
         except sqlite3.IntegrityError as e:
@@ -2017,6 +2093,8 @@ class ProductEditHandler(AdminRequiredHandler):
                 "image_path": old["image_path"],
                 "subcategory_id": int(old["subcategory_id"]),
                 "unit": old["unit"],
+                "purchase_price": float(old["purchase_price"] or 0),
+                "sale_price": float(old["sale_price"] or 0),
                 "min_stock": float(old["min_stock"]),
                 "is_active": int(old["is_active"]),
             },
@@ -2026,6 +2104,8 @@ class ProductEditHandler(AdminRequiredHandler):
                 "image_path": new_image_path,
                 "subcategory_id": subcategory_id,
                 "unit": unit,
+                "purchase_price": purchase_price,
+                "sale_price": sale_price,
                 "min_stock": min_stock,
                 "is_active": is_active,
             },
@@ -2061,6 +2141,9 @@ class ProductEditHandler(AdminRequiredHandler):
 
 class CatalogHandler(AdminRequiredHandler):
     def get(self):
+        warehouse_id = self.current_warehouse_id
+        if warehouse_id is None:
+            abort(403)
         categories = fetchall(self.db, "SELECT id, name FROM categories ORDER BY name", ())
         subcategories = fetchall(
             self.db,
@@ -2071,18 +2154,18 @@ class CatalogHandler(AdminRequiredHandler):
             self.db,
             """
             SELECT
-              p.id, p.name, p.sku, p.unit, p.image_path,
+              p.id, p.name, p.sku, p.unit, p.image_path, p.sale_price,
               p.subcategory_id, p.is_active,
               sc.category_id,
               COALESCE(SUM(CASE WHEN sm.move_type='in' THEN sm.qty ELSE 0 END), 0)
                 - COALESCE(SUM(CASE WHEN sm.move_type='out' THEN sm.qty ELSE 0 END), 0) AS balance
             FROM products p
             JOIN subcategories sc ON sc.id = p.subcategory_id
-            LEFT JOIN stock_moves sm ON sm.product_id = p.id
+            LEFT JOIN stock_moves sm ON sm.product_id = p.id AND sm.warehouse_id=?
             GROUP BY p.id
             ORDER BY p.name
             """,
-            (),
+            (warehouse_id,),
         )
         return self.render(
             "catalog.html",
@@ -2185,6 +2268,12 @@ class StockInDocsHandler(AdminRequiredHandler):
         where_parts: list[str] = ["1=1"]
         params: list = []
 
+        if not self.is_role_admin:
+            if self.current_warehouse_id is None:
+                abort(403)
+            where_parts.append("d.warehouse_id = ?")
+            params.append(self.current_warehouse_id)
+
         if status_filter in ("draft", "posted"):
             where_parts.append("d.status = ?")
             params.append(status_filter)
@@ -2212,12 +2301,15 @@ class StockInDocsHandler(AdminRequiredHandler):
             f"""
             SELECT
               d.id, d.doc_no, d.status, d.note,
-              d.created_by, d.created_at, d.posted_at,
+              d.created_by, d.created_at, d.posted_at, d.warehouse_id,
+              w.name AS warehouse_name,
               u.username AS created_by_name,
               (SELECT COUNT(*) FROM stock_in_items i WHERE i.doc_id = d.id) AS item_count,
-              (SELECT COALESCE(SUM(i.qty), 0) FROM stock_in_items i WHERE i.doc_id = d.id) AS total_qty
+              (SELECT COALESCE(SUM(i.qty), 0) FROM stock_in_items i WHERE i.doc_id = d.id) AS total_qty,
+              (SELECT COALESCE(SUM(i.qty * i.unit_price), 0) FROM stock_in_items i WHERE i.doc_id = d.id) AS total_amount
             FROM stock_in_docs d
             LEFT JOIN users u ON u.id = d.created_by
+            LEFT JOIN warehouses w ON w.id = d.warehouse_id
             WHERE {where_sql}
             ORDER BY {order_by}
             LIMIT ? OFFSET ?
@@ -2248,6 +2340,7 @@ class StockInHandler(AdminRequiredHandler):
               p.id, p.name, p.sku, p.unit, p.subcategory_id,
               p.image_path,
               p.is_active,
+              p.purchase_price,
               sc.category_id
             FROM products p
             JOIN subcategories sc ON sc.id = p.subcategory_id
@@ -2267,15 +2360,17 @@ class StockInHandler(AdminRequiredHandler):
         if doc_id_raw.isdigit():
             doc = fetchone(
                 self.db,
-                "SELECT id, doc_no, status, note, created_at FROM stock_in_docs WHERE id=?",
+                "SELECT id, doc_no, status, note, created_at, warehouse_id FROM stock_in_docs WHERE id=?",
                 (int(doc_id_raw),),
             )
+            if doc and not self.can_access_warehouse(doc["warehouse_id"]):
+                abort(404)
             if doc:
                 item_rows = fetchall(
                     self.db,
                     """
                     SELECT
-                      i.id, i.product_id, i.qty,
+                      i.id, i.product_id, i.qty, i.unit_price,
                       p.name AS product_name, p.sku, p.unit, p.image_path
                     FROM stock_in_items i
                     JOIN products p ON p.id=i.product_id
@@ -2290,9 +2385,14 @@ class StockInHandler(AdminRequiredHandler):
             doc and (doc["status"] or "") == "posted" and self.is_role_admin
         )
 
+        products_out = [dict(r) for r in products]
+        if not self.is_role_admin:
+            for product in products_out:
+                product.pop("purchase_price", None)
+
         return self.render(
             "stock_in.html",
-            products=[dict(r) for r in products],
+            products=products_out,
             categories=[dict(r) for r in categories],
             subcategories=[dict(r) for r in subcategories],
             doc=dict(doc) if doc else None,
@@ -2306,18 +2406,24 @@ class StockInHandler(AdminRequiredHandler):
 
     def post(self):
         action = (self.get_body_argument("action", "save_draft") or "save_draft").strip()
+        if self.is_role_viewer and action != "save_draft":
+            abort(403)
         doc_id_raw = self.get_body_argument("doc_id", "").strip()
         note = self.get_body_argument("note", "").strip() or None
         created_at_raw = self.get_body_argument("created_at", "").strip()
         product_ids = request.form.getlist("product_id[]")
         qty_values = request.form.getlist("qty[]")
+        price_values = request.form.getlist("unit_price[]")
+        warehouse_id = self.current_warehouse_id
+        if warehouse_id is None:
+            abort(403)
 
         if len(product_ids) != len(qty_values):
             return self.redirect(
                 _redirect_with_toast("/stock/in", title="Ошибка", body="Некорректные позиции", variant="error")
             )
 
-        line_items: list[tuple[int, float]] = []
+        line_rows: list[tuple[int, float, float | None]] = []
         for i, pid_raw in enumerate(product_ids):
             pid_s = (pid_raw or "").strip()
             qty_s = (qty_values[i] or "").strip()
@@ -2335,7 +2441,19 @@ class StockInHandler(AdminRequiredHandler):
                 return self.redirect(
                     _redirect_with_toast("/stock/in", title="Ошибка", body="Количество должно быть положительным", variant="error")
                 )
-            line_items.append((int(pid_s), qty))
+            submitted_price = None
+            if self.is_role_admin:
+                try:
+                    submitted_price = float(price_values[i])
+                    if submitted_price < 0:
+                        raise ValueError
+                except (IndexError, TypeError, ValueError):
+                    return self.redirect(
+                        _redirect_with_toast("/stock/in", title="Ошибка", body="Цена прихода должна быть неотрицательной", variant="error")
+                    )
+            line_rows.append((int(pid_s), qty, submitted_price))
+
+        line_items = [(pid, qty) for pid, qty, _ in line_rows]
 
         if not line_items:
             return self.redirect(
@@ -2354,13 +2472,26 @@ class StockInHandler(AdminRequiredHandler):
 
         try:
             self.db.execute("BEGIN")
+            old_prices: dict[int, float] = {}
 
             if doc_id_raw.isdigit():
                 doc_id = int(doc_id_raw)
-                doc = fetchone(self.db, "SELECT id, status, note FROM stock_in_docs WHERE id=?", (doc_id,))
+                doc = fetchone(self.db, "SELECT id, status, note, warehouse_id FROM stock_in_docs WHERE id=?", (doc_id,))
                 if not doc:
                     self.db.rollback()
                     abort(404)
+                if not self.can_access_warehouse(doc["warehouse_id"]):
+                    self.db.rollback()
+                    abort(404)
+                warehouse_id = int(doc["warehouse_id"])
+                old_prices = {
+                    int(r["product_id"]): float(r["unit_price"] or 0)
+                    for r in fetchall(
+                        self.db,
+                        "SELECT product_id, unit_price FROM stock_in_items WHERE doc_id=? ORDER BY id",
+                        (doc_id,),
+                    )
+                }
                 if (doc["status"] or "") == "posted":
                     if not self.is_role_admin:
                         self.db.rollback()
@@ -2368,7 +2499,7 @@ class StockInHandler(AdminRequiredHandler):
                             _redirect_with_toast(
                                 "/stock/in",
                                 title="Ошибка",
-                                body="Редактирование проведённых документов доступно только администратору",
+                                body="Редактирование проведённых документов доступно только руководителю",
                                 variant="error",
                             )
                         )
@@ -2401,18 +2532,25 @@ class StockInHandler(AdminRequiredHandler):
             else:
                 cur = self.db.execute(
                     """
-                    INSERT INTO stock_in_docs(doc_no, status, note, created_by, created_at)
-                    VALUES(?,'draft',?,?,COALESCE(?, datetime('now')))
+                    INSERT INTO stock_in_docs(doc_no, warehouse_id, status, note, created_by, created_at)
+                    VALUES(?,?,'draft',?,?,COALESCE(?, datetime('now')))
                     """,
-                    (_doc_no_next(self.db, "IN"), note, int(self.current_admin_id), created_at_db),
+                    (_doc_no_next(self.db, "IN"), warehouse_id, note, int(self.current_admin_id), created_at_db),
                 )
                 doc_id = int(cur.lastrowid)
                 cur.close()
 
-            for pid, qty in line_items:
+            for pid, qty, submitted_price in line_rows:
+                if self.is_role_admin:
+                    unit_price = float(submitted_price or 0)
+                elif pid in old_prices:
+                    unit_price = old_prices[pid]
+                else:
+                    product = fetchone(self.db, "SELECT purchase_price FROM products WHERE id=?", (pid,))
+                    unit_price = float(product["purchase_price"] or 0) if product else 0.0
                 self.db.execute(
-                    "INSERT INTO stock_in_items(doc_id, product_id, qty) VALUES(?,?,?)",
-                    (doc_id, pid, qty),
+                    "INSERT INTO stock_in_items(doc_id, product_id, qty, unit_price) VALUES(?,?,?,?)",
+                    (doc_id, pid, qty, unit_price),
                 )
 
             if action == "post":
@@ -2423,6 +2561,7 @@ class StockInHandler(AdminRequiredHandler):
                     int(self.current_admin_id),
                     note,
                     created_at_db,
+                    warehouse_id,
                 )
                 self.db.execute(
                     "UPDATE stock_in_docs SET status='posted', posted_at=datetime('now') WHERE id=?",
@@ -2436,6 +2575,7 @@ class StockInHandler(AdminRequiredHandler):
                     int(self.current_admin_id),
                     note,
                     created_at_db,
+                    warehouse_id,
                 )
                 self.db.execute(
                     "UPDATE stock_in_docs SET posted_at=datetime('now') WHERE id=?",
@@ -2522,6 +2662,12 @@ class StockOutDocsHandler(AdminRequiredHandler):
         where_parts: list[str] = ["1=1"]
         params: list = []
 
+        if not self.is_role_admin:
+            if self.current_warehouse_id is None:
+                abort(403)
+            where_parts.append("d.warehouse_id = ?")
+            params.append(self.current_warehouse_id)
+
         if status_filter in ("draft", "posted"):
             where_parts.append("d.status = ?")
             params.append(status_filter)
@@ -2556,14 +2702,17 @@ class StockOutDocsHandler(AdminRequiredHandler):
             f"""
             SELECT
               d.id, d.doc_no, d.client_id, d.status, d.note,
-              d.created_by, d.created_at, d.posted_at,
+              d.created_by, d.created_at, d.posted_at, d.warehouse_id,
+              w.name AS warehouse_name,
               cl.full_name AS client_name,
               u.username AS created_by_name,
               (SELECT COUNT(*) FROM stock_out_items i WHERE i.doc_id = d.id) AS item_count,
-              (SELECT COALESCE(SUM(i.qty), 0) FROM stock_out_items i WHERE i.doc_id = d.id) AS total_qty
+              (SELECT COALESCE(SUM(i.qty), 0) FROM stock_out_items i WHERE i.doc_id = d.id) AS total_qty,
+              (SELECT COALESCE(SUM(i.qty * i.unit_price), 0) FROM stock_out_items i WHERE i.doc_id = d.id) AS total_amount
             FROM stock_out_docs d
             LEFT JOIN clients cl ON cl.id = d.client_id
             LEFT JOIN users u ON u.id = d.created_by
+            LEFT JOIN warehouses w ON w.id = d.warehouse_id
             WHERE {where_sql}
             ORDER BY {order_by}
             LIMIT ? OFFSET ?
@@ -2587,6 +2736,20 @@ class StockOutDocsHandler(AdminRequiredHandler):
 
 class StockOutHandler(AdminRequiredHandler):
     def get(self):
+        warehouse_id = self.current_warehouse_id
+        if warehouse_id is None:
+            abort(403)
+        requested_doc_id = (self.get_argument("doc_id", "") or "").strip()
+        if requested_doc_id.isdigit():
+            requested_doc = fetchone(
+                self.db,
+                "SELECT warehouse_id FROM stock_out_docs WHERE id=?",
+                (int(requested_doc_id),),
+            )
+            if requested_doc:
+                if not self.can_access_warehouse(requested_doc["warehouse_id"]):
+                    abort(404)
+                warehouse_id = int(requested_doc["warehouse_id"])
         products = fetchall(
             self.db,
             """
@@ -2594,16 +2757,17 @@ class StockOutHandler(AdminRequiredHandler):
               p.id, p.name, p.sku, p.unit, p.subcategory_id,
               p.image_path,
               p.is_active,
+              p.sale_price,
               sc.category_id,
               COALESCE(SUM(CASE WHEN sm.move_type='in' THEN sm.qty ELSE 0 END),0)
                 - COALESCE(SUM(CASE WHEN sm.move_type='out' THEN sm.qty ELSE 0 END),0) AS stock_balance
             FROM products p
             JOIN subcategories sc ON sc.id = p.subcategory_id
-            LEFT JOIN stock_moves sm ON sm.product_id = p.id
+            LEFT JOIN stock_moves sm ON sm.product_id = p.id AND sm.warehouse_id=?
             GROUP BY p.id
             ORDER BY p.name
             """,
-            (),
+            (warehouse_id,),
         )
         clients = fetchall(
             self.db,
@@ -2622,15 +2786,17 @@ class StockOutHandler(AdminRequiredHandler):
         if doc_id_raw.isdigit():
             doc = fetchone(
                 self.db,
-                "SELECT id, doc_no, client_id, status, note, created_at FROM stock_out_docs WHERE id=?",
+                "SELECT id, doc_no, client_id, status, note, created_at, warehouse_id FROM stock_out_docs WHERE id=?",
                 (int(doc_id_raw),),
             )
+            if doc and not self.can_access_warehouse(doc["warehouse_id"]):
+                abort(404)
             if doc:
                 item_rows = fetchall(
                     self.db,
                     """
                     SELECT
-                      i.id, i.product_id, i.qty,
+                      i.id, i.product_id, i.qty, i.unit_price,
                       p.name AS product_name, p.sku, p.unit, p.image_path,
                       sc.category_id
                     FROM stock_out_items i
@@ -2650,7 +2816,7 @@ class StockOutHandler(AdminRequiredHandler):
         if can_edit_posted:
             for it in items:
                 pid = int(it["product_id"])
-                actual = _get_stock_balance(self.db, pid)
+                actual = _get_stock_balance(self.db, pid, int(doc["warehouse_id"]))
                 it["stock_balance"] = actual
                 it["limit_balance"] = actual + doc_qty_by_product.get(pid, 0.0)
         products_out = []
@@ -2687,12 +2853,18 @@ class StockOutHandler(AdminRequiredHandler):
 
     def post(self):
         action = (self.get_body_argument("action", "save_draft") or "save_draft").strip()
+        if self.is_role_viewer and action != "save_draft":
+            abort(403)
         doc_id_raw = self.get_body_argument("doc_id", "").strip()
         client_id_raw = self.get_body_argument("client_id", "").strip()
         note = self.get_body_argument("note", "").strip() or None
         created_at_raw = self.get_body_argument("created_at", "").strip()
         product_ids = request.form.getlist("product_id[]")
         qty_values = request.form.getlist("qty[]")
+        price_values = request.form.getlist("unit_price[]")
+        warehouse_id = self.current_warehouse_id
+        if warehouse_id is None:
+            abort(403)
 
         if len(product_ids) != len(qty_values):
             return self.redirect(
@@ -2703,7 +2875,7 @@ class StockOutHandler(AdminRequiredHandler):
         if client_id_raw.isdigit():
             client_id = int(client_id_raw)
 
-        line_items: list[tuple[int, float]] = []
+        line_rows: list[tuple[int, float, float | None]] = []
         for i, pid_raw in enumerate(product_ids):
             pid_s = (pid_raw or "").strip()
             qty_s = (qty_values[i] or "").strip()
@@ -2721,7 +2893,19 @@ class StockOutHandler(AdminRequiredHandler):
                 return self.redirect(
                     _redirect_with_toast("/stock/out", title="Ошибка", body="Количество должно быть положительным", variant="error")
                 )
-            line_items.append((int(pid_s), qty))
+            submitted_price = None
+            if not self.is_role_viewer:
+                try:
+                    submitted_price = float(price_values[i])
+                    if submitted_price < 0:
+                        raise ValueError
+                except (IndexError, TypeError, ValueError):
+                    return self.redirect(
+                        _redirect_with_toast("/stock/out", title="Ошибка", body="Цена отпуска должна быть неотрицательной", variant="error")
+                    )
+            line_rows.append((int(pid_s), qty, submitted_price))
+
+        line_items = [(pid, qty) for pid, qty, _ in line_rows]
 
         if not line_items:
             return self.redirect(
@@ -2752,17 +2936,30 @@ class StockOutHandler(AdminRequiredHandler):
 
         try:
             self.db.execute("BEGIN")
+            old_prices: dict[int, float] = {}
 
             if doc_id_raw.isdigit():
                 doc_id = int(doc_id_raw)
                 doc = fetchone(
                     self.db,
-                    "SELECT id, status, note, client_id FROM stock_out_docs WHERE id=?",
+                    "SELECT id, status, note, client_id, warehouse_id FROM stock_out_docs WHERE id=?",
                     (doc_id,),
                 )
                 if not doc:
                     self.db.rollback()
                     abort(404)
+                if not self.can_access_warehouse(doc["warehouse_id"]):
+                    self.db.rollback()
+                    abort(404)
+                warehouse_id = int(doc["warehouse_id"])
+                old_prices = {
+                    int(r["product_id"]): float(r["unit_price"] or 0)
+                    for r in fetchall(
+                        self.db,
+                        "SELECT product_id, unit_price FROM stock_out_items WHERE doc_id=? ORDER BY id",
+                        (doc_id,),
+                    )
+                }
                 if (doc["status"] or "") == "posted":
                     if not self.is_role_admin:
                         self.db.rollback()
@@ -2770,7 +2967,7 @@ class StockOutHandler(AdminRequiredHandler):
                             _redirect_with_toast(
                                 "/stock/out",
                                 title="Ошибка",
-                                body="Редактирование проведённых документов доступно только администратору",
+                                body="Редактирование проведённых документов доступно только руководителю",
                                 variant="error",
                             )
                         )
@@ -2810,22 +3007,29 @@ class StockOutHandler(AdminRequiredHandler):
             else:
                 cur = self.db.execute(
                     """
-                    INSERT INTO stock_out_docs(doc_no, client_id, status, note, created_by, created_at)
-                    VALUES(?,?,'draft',?,?,COALESCE(?, datetime('now')))
+                    INSERT INTO stock_out_docs(doc_no, client_id, warehouse_id, status, note, created_by, created_at)
+                    VALUES(?,?,?,'draft',?,?,COALESCE(?, datetime('now')))
                     """,
-                    (_doc_no_next(self.db), client_id, note, int(self.current_admin_id), created_at_db),
+                    (_doc_no_next(self.db), client_id, warehouse_id, note, int(self.current_admin_id), created_at_db),
                 )
                 doc_id = int(cur.lastrowid)
                 cur.close()
 
-            for pid, qty in line_items:
+            for pid, qty, submitted_price in line_rows:
+                if not self.is_role_viewer:
+                    unit_price = float(submitted_price or 0)
+                elif pid in old_prices:
+                    unit_price = old_prices[pid]
+                else:
+                    product = fetchone(self.db, "SELECT sale_price FROM products WHERE id=?", (pid,))
+                    unit_price = float(product["sale_price"] or 0) if product else 0.0
                 self.db.execute(
-                    "INSERT INTO stock_out_items(doc_id, product_id, qty) VALUES(?,?,?)",
-                    (doc_id, pid, qty),
+                    "INSERT INTO stock_out_items(doc_id, product_id, qty, unit_price) VALUES(?,?,?,?)",
+                    (doc_id, pid, qty, unit_price),
                 )
 
             if action == "post" or is_posted_edit:
-                qty_err = _stock_out_qty_error(self.db, line_items)
+                qty_err = _stock_out_qty_error(self.db, line_items, warehouse_id)
                 if qty_err:
                     self.db.rollback()
                     return self.redirect(
@@ -2844,6 +3048,7 @@ class StockOutHandler(AdminRequiredHandler):
                     int(self.current_admin_id),
                     note,
                     created_at_db,
+                    warehouse_id,
                 )
                 if action == "post":
                     self.db.execute(
@@ -2940,6 +3145,11 @@ class InventoryDocsHandler(AdminRequiredHandler):
 
         where_parts: list[str] = []
         params: list = []
+        if not self.is_role_admin:
+            if self.current_warehouse_id is None:
+                abort(403)
+            where_parts.append("d.warehouse_id=?")
+            params.append(self.current_warehouse_id)
         if status_filter in ("draft", "posted"):
             where_parts.append("d.status=?")
             params.append(status_filter)
@@ -2964,12 +3174,14 @@ class InventoryDocsHandler(AdminRequiredHandler):
             f"""
             SELECT
               d.id, d.doc_no, d.status, d.note,
-              d.created_by, d.created_at, d.posted_at,
+              d.created_by, d.created_at, d.posted_at, d.warehouse_id,
+              w.name AS warehouse_name,
               u.username AS created_by_name,
               (SELECT COUNT(*) FROM inventory_items i WHERE i.doc_id = d.id) AS item_count,
               (SELECT COUNT(*) FROM inventory_items i WHERE i.doc_id = d.id AND ABS(i.qty_actual - i.qty_system) > 0.000001) AS diff_count
             FROM inventory_docs d
             LEFT JOIN users u ON u.id = d.created_by
+            LEFT JOIN warehouses w ON w.id = d.warehouse_id
             {where_sql}
             ORDER BY {order_sql}
             LIMIT ? OFFSET ?
@@ -2994,6 +3206,9 @@ class InventoryDocsHandler(AdminRequiredHandler):
 
 class InventoryHandler(AdminRequiredHandler):
     def get(self):
+        warehouse_id = self.current_warehouse_id
+        if warehouse_id is None:
+            abort(403)
         categories = fetchall(self.db, "SELECT id, name FROM categories ORDER BY name", ())
         subcategories = fetchall(
             self.db,
@@ -3006,10 +3221,13 @@ class InventoryHandler(AdminRequiredHandler):
         if doc_id_raw.isdigit():
             doc = fetchone(
                 self.db,
-                "SELECT id, doc_no, status, note, created_at FROM inventory_docs WHERE id=?",
+                "SELECT id, doc_no, status, note, created_at, warehouse_id FROM inventory_docs WHERE id=?",
                 (int(doc_id_raw),),
             )
+            if doc and not self.can_access_warehouse(doc["warehouse_id"]):
+                abort(404)
             if doc:
+                warehouse_id = int(doc["warehouse_id"])
                 item_rows = fetchall(
                     self.db,
                     """
@@ -3033,8 +3251,14 @@ class InventoryHandler(AdminRequiredHandler):
                     d["id"] = d["product_id"]
                     saved_items.append(d)
 
-        products = _inventory_page_products(self.db, dict(doc) if doc else None, saved_items)
         is_posted = bool(doc and (doc["status"] or "") == "posted")
+        can_edit_posted = bool(is_posted and self.is_role_admin)
+        products = _inventory_page_products(
+            self.db,
+            None if can_edit_posted else (dict(doc) if doc else None),
+            saved_items,
+            warehouse_id,
+        )
 
         return self.render(
             "inventory.html",
@@ -3044,17 +3268,23 @@ class InventoryHandler(AdminRequiredHandler):
             doc=dict(doc) if doc else None,
             next_doc_no=_doc_no_next(self.db, "INV") if not doc else None,
             is_posted=is_posted,
+            can_edit_posted=can_edit_posted,
             title="Инвентаризация",
         )
 
     def post(self):
         action = (self.get_body_argument("action", "save_draft") or "save_draft").strip()
+        if self.is_role_viewer and action != "save_draft":
+            abort(403)
         doc_id_raw = self.get_body_argument("doc_id", "").strip()
         note = self.get_body_argument("note", "").strip() or None
         created_at_raw = self.get_body_argument("created_at", "").strip()
         product_ids = request.form.getlist("product_id[]")
         qty_system_values = request.form.getlist("qty_system[]")
         qty_actual_values = request.form.getlist("qty_actual[]")
+        warehouse_id = self.current_warehouse_id
+        if warehouse_id is None:
+            abort(403)
 
         line_items = _parse_inventory_lines(product_ids, qty_system_values, qty_actual_values)
         if not line_items:
@@ -3075,34 +3305,44 @@ class InventoryHandler(AdminRequiredHandler):
                 created_at_db = None
 
         doc_id: int | None = None
+        is_posted_edit = False
         try:
             self.db.execute("BEGIN")
 
             if doc_id_raw.isdigit():
                 doc_id = int(doc_id_raw)
-                doc = fetchone(self.db, "SELECT id, status FROM inventory_docs WHERE id=?", (doc_id,))
+                doc = fetchone(
+                    self.db,
+                    "SELECT id, status, warehouse_id FROM inventory_docs WHERE id=?",
+                    (doc_id,),
+                )
                 if not doc:
                     self.db.rollback()
                     abort(404)
-                if (doc["status"] or "") == "posted":
+                if not self.can_access_warehouse(doc["warehouse_id"]):
                     self.db.rollback()
-                    return self.redirect(
-                        _redirect_with_toast(
-                            f"/stock/inventory?doc_id={doc_id}",
-                            title="Ошибка",
-                            body="Документ уже проведён",
-                            variant="error",
-                        )
+                    abort(404)
+                warehouse_id = int(doc["warehouse_id"])
+                if (doc["status"] or "") == "posted":
+                    if not self.is_role_admin or action != "update_posted":
+                        self.db.rollback()
+                        abort(403)
+                    is_posted_edit = True
+                if created_at_db:
+                    self.db.execute(
+                        "UPDATE inventory_docs SET note=?, created_at=? WHERE id=?",
+                        (note, created_at_db, doc_id),
                     )
-                self.db.execute("UPDATE inventory_docs SET note=? WHERE id=?", (note, doc_id))
+                else:
+                    self.db.execute("UPDATE inventory_docs SET note=? WHERE id=?", (note, doc_id))
                 self.db.execute("DELETE FROM inventory_items WHERE doc_id=?", (doc_id,))
             else:
                 cur = self.db.execute(
                     """
-                    INSERT INTO inventory_docs(doc_no, status, note, created_by, created_at)
-                    VALUES(?,'draft',?,?,COALESCE(?, datetime('now')))
+                    INSERT INTO inventory_docs(doc_no, warehouse_id, status, note, created_by, created_at)
+                    VALUES(?,?,'draft',?,?,COALESCE(?, datetime('now')))
                     """,
-                    (_doc_no_next(self.db, "INV"), note, int(self.current_admin_id), created_at_db),
+                    (_doc_no_next(self.db, "INV"), warehouse_id, note, int(self.current_admin_id), created_at_db),
                 )
                 doc_id = int(cur.lastrowid)
                 cur.close()
@@ -3119,6 +3359,11 @@ class InventoryHandler(AdminRequiredHandler):
             if action == "post":
                 self.db.execute(
                     "UPDATE inventory_docs SET status='posted', posted_at=datetime('now') WHERE id=?",
+                    (doc_id,),
+                )
+            elif is_posted_edit:
+                self.db.execute(
+                    "UPDATE inventory_docs SET posted_at=datetime('now') WHERE id=?",
                     (doc_id,),
                 )
 
@@ -3143,7 +3388,10 @@ class InventoryHandler(AdminRequiredHandler):
         diff_count = sum(
             1 for it in line_items if abs(float(it["qty_actual"]) - float(it["qty_system"])) > 1e-6
         )
-        doc_event = "inventory_post" if action == "post" else "inventory_draft_save"
+        if is_posted_edit:
+            doc_event = "inventory_post_edit"
+        else:
+            doc_event = "inventory_post" if action == "post" else "inventory_draft_save"
         self.audit(
             event=doc_event,
             entity="inventory_doc",
@@ -3152,7 +3400,7 @@ class InventoryHandler(AdminRequiredHandler):
                 "note": note,
                 "items": len(line_items),
                 "diff_count": diff_count,
-                "status": ("posted" if action == "post" else "draft"),
+                "status": ("posted" if action in ("post", "update_posted") else "draft"),
             },
             message=f"Инвентаризация #{doc_id}",
         )
@@ -3168,10 +3416,14 @@ class InventoryHandler(AdminRequiredHandler):
         return self.redirect(
             _redirect_with_toast(
                 ("/stock/inventory/docs" if action == "post" else f"/stock/inventory?doc_id={doc_id}"),
-                title=("Инвентаризация проведена" if action == "post" else "Черновик сохранён"),
+                title=(
+                    "Изменения сохранены"
+                    if is_posted_edit
+                    else ("Инвентаризация проведена" if action == "post" else "Черновик сохранён")
+                ),
                 body=(
                     f"Позиций: {len(line_items)} · Расхождений: {diff_count}"
-                    if action == "post"
+                    if action in ("post", "update_posted")
                     else f"Позиций: {len(line_items)}"
                 ),
             )
@@ -3185,10 +3437,29 @@ class DocumentPdfHandler(AdminRequiredHandler):
         doc_id_raw = (self.get_argument("doc_id", "") or "").strip()
         if not doc_id_raw.isdigit():
             abort(404)
+        table_by_kind = {
+            "stock_in": "stock_in_docs",
+            "stock_out": "stock_out_docs",
+            "inventory": "inventory_docs",
+        }
+        table = table_by_kind.get(doc_kind)
+        if table:
+            doc_access = fetchone(
+                self.db,
+                f"SELECT warehouse_id FROM {table} WHERE id=?",
+                (int(doc_id_raw),),
+            )
+            if not doc_access or not self.can_access_warehouse(doc_access["warehouse_id"]):
+                abort(404)
         try:
             from services.pdf_docs import build_document_pdf
 
-            pdf_bytes, filename = build_document_pdf(self.db, doc_kind, int(doc_id_raw))
+            pdf_bytes, filename = build_document_pdf(
+                self.db,
+                doc_kind,
+                int(doc_id_raw),
+                include_purchase_prices=self.is_role_admin,
+            )
         except LookupError:
             abort(404)
         except ValueError:
@@ -3198,7 +3469,13 @@ class DocumentPdfHandler(AdminRequiredHandler):
         return Response(
             pdf_bytes,
             mimetype="application/pdf",
-            headers={"Content-Disposition": f'inline; filename="{filename}"'},
+            headers={
+                "Content-Disposition": (
+                    f'attachment; filename="{filename}"'
+                    if self.get_argument("download", "") == "1"
+                    else f'inline; filename="{filename}"'
+                )
+            },
         )
 
 
@@ -3232,6 +3509,12 @@ class StockMovesHandler(AdminRequiredHandler):
 
         where_parts: list[str] = ["1=1"]
         params: list = []
+
+        if not self.is_role_admin:
+            if self.current_warehouse_id is None:
+                abort(403)
+            where_parts.append("sm.warehouse_id = ?")
+            params.append(self.current_warehouse_id)
 
         if product_id_raw.isdigit():
             where_parts.append("sm.product_id = ?")
@@ -3297,11 +3580,13 @@ class StockMovesHandler(AdminRequiredHandler):
               p.unit AS product_unit,
               p.sku AS product_sku,
               cl.full_name AS client_name,
-              u.username AS admin_username
+              u.username AS admin_username,
+              w.name AS warehouse_name
             FROM stock_moves sm
             JOIN products p ON p.id = sm.product_id
             LEFT JOIN clients cl ON cl.id = sm.client_id
             LEFT JOIN users u ON u.id = sm.admin_id
+            LEFT JOIN warehouses w ON w.id = sm.warehouse_id
             WHERE {where_sql}
             ORDER BY {order_by}
             LIMIT ? OFFSET ?
@@ -3343,27 +3628,105 @@ class StockMovesHandler(AdminRequiredHandler):
 
 class UsersHandler(AdminRequiredHandler):
     def get(self):
-        if not self.is_role_admin:
+        if not (self.is_role_admin or self.is_role_manager):
             abort(403)
 
-        admins = fetchall(
-            self.db,
-            "SELECT id, username, is_active, role FROM users ORDER BY id",
+        if self.is_role_admin:
+            users = fetchall(
+                self.db,
+                """
+                SELECT u.id, u.username, u.is_active, u.role, u.created_at,
+                       u.warehouse_id, w.name AS warehouse_name
+                FROM users u
+                LEFT JOIN warehouses w ON w.id=u.warehouse_id
+                ORDER BY u.id
+                """,
+            )
+        else:
+            if self.current_warehouse_id is None:
+                abort(403)
+            users = fetchall(
+                self.db,
+                """
+                SELECT u.id, u.username, u.is_active, u.role, u.created_at,
+                       u.warehouse_id, w.name AS warehouse_name
+                FROM users u
+                LEFT JOIN warehouses w ON w.id=u.warehouse_id
+                WHERE u.role='viewer' AND u.warehouse_id=?
+                ORDER BY u.id
+                """,
+                (self.current_warehouse_id,),
+            )
+        warehouses = fetchall(
+            self.db, "SELECT id, name, is_active FROM warehouses ORDER BY name", ()
         )
         return self.render(
             "users.html",
-            admins=[dict(a) for a in admins],
+            users=[dict(u) for u in users],
+            warehouses=[dict(w) for w in warehouses],
             error=None,
             title="Пользователи",
         )
 
     def post(self):
-        if not self.is_role_admin:
+        if not (self.is_role_admin or self.is_role_manager):
             abort(403)
+
+        action = (self.get_body_argument("action", "create_user") or "create_user").strip()
+        if action == "create_warehouse":
+            if not self.is_role_admin:
+                abort(403)
+            warehouse_name = self.get_body_argument("warehouse_name", "").strip()
+            if not warehouse_name:
+                return self.redirect(
+                    _redirect_with_toast(
+                        "/admins", title="Ошибка", body="Укажите название склада", variant="error"
+                    )
+                )
+            try:
+                self.db.execute(
+                    "INSERT INTO warehouses(name, is_active) VALUES(?, 1)",
+                    (warehouse_name,),
+                )
+                self.db.commit()
+            except sqlite3.IntegrityError:
+                self.db.rollback()
+                return self.redirect(
+                    _redirect_with_toast(
+                        "/admins", title="Ошибка", body="Склад с таким названием уже существует", variant="error"
+                    )
+                )
+            return self.redirect(
+                _redirect_with_toast("/admins", title="Склад добавлен", body=warehouse_name)
+            )
 
         username = self.get_body_argument("username").strip()
         password = self.get_body_argument("password").strip()
-        role = (self.get_body_argument("role", "admin") or "admin").strip()
+        role = (self.get_body_argument("role", "") or "").strip()
+        warehouse_id_raw = (self.get_body_argument("warehouse_id", "") or "").strip()
+        if self.is_role_manager:
+            role = "viewer"
+            warehouse_id = self.current_warehouse_id
+        else:
+            if role not in ("admin", "manager", "viewer"):
+                return self.redirect(
+                    _redirect_with_toast(
+                        "/admins", title="Ошибка", body="Выберите роль", variant="error"
+                    )
+                )
+            warehouse_id = int(warehouse_id_raw) if warehouse_id_raw.isdigit() else None
+
+        warehouse = fetchone(
+            self.db,
+            "SELECT id FROM warehouses WHERE id=? AND is_active=1",
+            (warehouse_id,),
+        ) if warehouse_id is not None else None
+        if not warehouse:
+            return self.redirect(
+                _redirect_with_toast(
+                    "/admins", title="Ошибка", body="Выберите склад", variant="error"
+                )
+            )
 
         if not username or not password:
             return self.redirect(
@@ -3388,8 +3751,8 @@ class UsersHandler(AdminRequiredHandler):
 
         try:
             cur = self.db.execute(
-                "INSERT INTO users(username, password_hash, is_active, role) VALUES(?,?,1,?)",
-                (username, hash_password(password), role or "admin"),
+                "INSERT INTO users(username, password_hash, is_active, role, warehouse_id) VALUES(?,?,1,?,?)",
+                (username, hash_password(password), role or "viewer", warehouse_id),
             )
             new_id = int(cur.lastrowid) if cur.lastrowid else None
             self.db.commit()
@@ -3408,7 +3771,12 @@ class UsersHandler(AdminRequiredHandler):
             event="create_user",
             entity="user",
             entity_id=new_id,
-            after={"username": username, "is_active": 1, "role": role},
+            after={
+                "username": username,
+                "is_active": 1,
+                "role": role,
+                "warehouse_id": warehouse_id,
+            },
             message=username,
         )
         ws_cid = self.get_body_argument("ws_client_id", default=None)
@@ -3432,7 +3800,7 @@ class UserEditHandler(AdminRequiredHandler):
 
         admin = fetchone(
             self.db,
-            "SELECT id, username, is_active, role FROM users WHERE id=?",
+            "SELECT id, username, is_active, role, warehouse_id FROM users WHERE id=?",
             (int(admin_id),),
         )
         if not admin:
@@ -3446,6 +3814,9 @@ class UserEditHandler(AdminRequiredHandler):
         return self.render(
             "user_edit.html",
             admin=dict(admin),
+            warehouses=[dict(w) for w in fetchall(
+                self.db, "SELECT id, name FROM warehouses WHERE is_active=1 ORDER BY name", ()
+            )],
             is_root=is_root,
             is_self_admin=is_self_admin,
             error=None,
@@ -3460,10 +3831,14 @@ class UserEditHandler(AdminRequiredHandler):
         password = self.get_body_argument("password", "").strip()
         is_active = 1 if self.get_body_argument("is_active", None) is not None else 0
         role = (self.get_body_argument("role", "") or "").strip()
+        if role not in ("admin", "manager", "viewer"):
+            role = "viewer"
+        warehouse_id_raw = (self.get_body_argument("warehouse_id", "") or "").strip()
+        warehouse_id = int(warehouse_id_raw) if warehouse_id_raw.isdigit() else None
 
         old = fetchone(
             self.db,
-            "SELECT username, is_active, role FROM users WHERE id=?",
+            "SELECT username, is_active, role, warehouse_id FROM users WHERE id=?",
             (int(admin_id),),
         )
         if not old:
@@ -3476,6 +3851,7 @@ class UserEditHandler(AdminRequiredHandler):
                 username = old["username"]
                 is_active = int(old["is_active"])
                 role = old["role"]
+                warehouse_id = old["warehouse_id"]
                 password = ""
             else:
                 is_active = int(old["is_active"])
@@ -3495,6 +3871,7 @@ class UserEditHandler(AdminRequiredHandler):
             and (old["username"] or "").strip() == username
             and int(old["is_active"]) == is_active
             and (old["role"] or "admin") == (role or old["role"] or "admin")
+            and old["warehouse_id"] == warehouse_id
             and not password
         ):
             return self.redirect(
@@ -3502,12 +3879,20 @@ class UserEditHandler(AdminRequiredHandler):
             )
 
         try:
+            warehouse = fetchone(
+                self.db,
+                "SELECT id FROM warehouses WHERE id=? AND is_active=1",
+                (warehouse_id,),
+            ) if warehouse_id is not None else None
+            if not warehouse:
+                raise sqlite3.IntegrityError("warehouse_required")
             self.db.execute(
-                "UPDATE users SET username=?, is_active=?, role=? WHERE id=?",
+                "UPDATE users SET username=?, is_active=?, role=?, warehouse_id=? WHERE id=?",
                 (
                     username,
                     is_active,
                     role or (old["role"] if old else "admin"),
+                    warehouse_id,
                     int(admin_id),
                 ),
             )
@@ -3519,7 +3904,7 @@ class UserEditHandler(AdminRequiredHandler):
             if from_modal:
                 admin_row = fetchone(
                     self.db,
-                    "SELECT id, username, is_active, role FROM users WHERE id=?",
+                    "SELECT id, username, is_active, role, warehouse_id FROM users WHERE id=?",
                     (int(admin_id),),
                 )
                 if not admin_row:
@@ -3533,6 +3918,9 @@ class UserEditHandler(AdminRequiredHandler):
                 return self.render(
                     "user_edit.html",
                     admin=dict(admin_row),
+                    warehouses=[dict(w) for w in fetchall(
+                        self.db, "SELECT id, name FROM warehouses WHERE is_active=1 ORDER BY name", ()
+                    )],
                     is_root=is_root,
                     is_self_admin=is_self_admin,
                     error="Пользователь с таким логином уже существует",
@@ -3561,6 +3949,7 @@ class UserEditHandler(AdminRequiredHandler):
                         "username": username,
                         "is_active": is_active,
                         "role": role or (old["role"] if old else "admin"),
+                        "warehouse_id": warehouse_id,
                     }
                     is_root = int(admin_id) == 1
                     is_self_admin = (
@@ -3571,6 +3960,9 @@ class UserEditHandler(AdminRequiredHandler):
                     return self.render(
                         "user_edit.html",
                         admin=admin_dict,
+                        warehouses=[dict(w) for w in fetchall(
+                            self.db, "SELECT id, name FROM warehouses WHERE is_active=1 ORDER BY name", ()
+                        )],
                         is_root=is_root,
                         is_self_admin=is_self_admin,
                         error=err,
@@ -3607,11 +3999,13 @@ class UserEditHandler(AdminRequiredHandler):
                 "username": (old["username"] or "").strip(),
                 "is_active": int(old["is_active"]),
                 "role": old["role"],
+                "warehouse_id": old["warehouse_id"],
             },
             after={
                 "username": username,
                 "is_active": is_active,
                 "role": role or (old["role"] if old else None),
+                "warehouse_id": warehouse_id,
                 "password_changed": bool(password),
             },
             message=username,
@@ -4033,9 +4427,9 @@ class LogsHandler(AdminRequiredHandler):
                 return None
 
         ROLE_RU = {
-            "admin": "Админ",
+            "admin": "Руководитель",
             "manager": "Менеджер",
-            "viewer": "Читатель",
+            "viewer": "Продавец",
         }
 
         EVENT_RU = {

@@ -74,6 +74,7 @@
             <div class="catalog-product-card__name">{{ p["name"] }}</div>
             <div class="catalog-product-card__meta">
               <span class="muted">{{ p["sku"] or "—" }}</span>
+              <span>{{ fmt_money(p["sale_price"], digits=2) }} {{ app_currency }}</span>
               <span class="chip {{ 'chip--success' if p['balance'] > 0 else 'chip--danger' }}">{{ fmt_qty(p["balance"]) }} {{ p["unit"] }}</span>
             </div>
           </div>
@@ -85,11 +86,13 @@
         </div>
         {% endfor %}
       </div>
+      {% if is_admin_role %}
       <div id="prodAddWrap" style="display:none;margin-top:10px;">
         <a class="btn btn-sm btn-primary" href="/products" id="prodAddLink">
           <span class="material-icons-outlined" style="font-size:16px;vertical-align:middle;">add</span> Добавить товар
         </a>
       </div>
+      {% endif %}
     </section>
 
   </div>

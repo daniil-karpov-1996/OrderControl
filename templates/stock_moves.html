@@ -90,29 +90,41 @@
     {% if filter_move_type %}{% set filter_qs = filter_qs ~ "&move_type=" ~ filter_move_type %}{% endif %}
 
     <div class="table-wrap">
-      <table>
+      <table class="stock-moves-table{% if is_admin_role %} stock-moves-table--admin{% endif %}">
+        <colgroup>
+          <col class="stock-moves-col-date">
+          <col class="stock-moves-col-type">
+          {% if is_admin_role %}<col class="stock-moves-col-warehouse">{% endif %}
+          <col class="stock-moves-col-product">
+          <col class="stock-moves-col-sku">
+          <col class="stock-moves-col-client">
+          <col class="stock-moves-col-qty">
+          <col class="stock-moves-col-note">
+          <col class="stock-moves-col-author">
+        </colgroup>
         <thead>
           <tr>
-            <th style="width: 13%;">
+            <th>
               <a class="sort" href="/stock/moves?sort=created&dir={{ next_dir_created }}&page=1&per_page={{ per_page }}{{ filter_qs }}">
                 Дата {% if sort == "created" %}{% if dir == "asc" %}⬆{% else %}⬇{% endif %}{% else %}⇅{% endif %}
               </a>
             </th>
-            <th style="width: 8%;">Тип</th>
-            <th style="width: 17%;">
+            <th>Тип</th>
+            {% if is_admin_role %}<th>Склад</th>{% endif %}
+            <th>
               <a class="sort" href="/stock/moves?sort=product&dir={{ next_dir_product }}&page=1&per_page={{ per_page }}{{ filter_qs }}">
                 Товар {% if sort == "product" %}{% if dir == "asc" %}⬆{% else %}⬇{% endif %}{% else %}⇅{% endif %}
               </a>
             </th>
-            <th style="width: 10%;">SKU</th>
-            <th style="width: 14%;">Клиент</th>
-            <th class="right" style="width: 9%;">
+            <th>SKU</th>
+            <th>Клиент</th>
+            <th class="right">
               <a class="sort" href="/stock/moves?sort=qty&dir={{ next_dir_qty }}&page=1&per_page={{ per_page }}{{ filter_qs }}">
                 Кол-во {% if sort == "qty" %}{% if dir == "asc" %}⬆{% else %}⬇{% endif %}{% else %}⇅{% endif %}
               </a>
             </th>
-            <th style="width: 16%;">Примечание</th>
-            <th style="width: 13%;">Автор</th>
+            <th>Примечание</th>
+            <th>Автор</th>
           </tr>
         </thead>
         <tbody>
@@ -126,6 +138,7 @@
               <span class="badge badge-negative">Отпуск</span>
               {% endif %}
             </td>
+            {% if is_admin_role %}<td>{{ m["warehouse_name"] or "-" }}</td>{% endif %}
             <td><strong>{{ m["product_name"] or "-" }}</strong></td>
             <td class="muted">{{ m["product_sku"] or "-" }}</td>
             <td>{{ m["client_name"] or "-" }}</td>
@@ -136,7 +149,7 @@
           {% endfor %}
           {% if not moves %}
           <tr>
-            <td colspan="8" class="muted" style="text-align:center;padding:24px;">Нет движений</td>
+            <td colspan="{{ 9 if is_admin_role else 8 }}" class="muted" style="text-align:center;padding:24px;">Нет движений</td>
           </tr>
           {% endif %}
         </tbody>

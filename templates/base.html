@@ -81,18 +81,24 @@
           <span class="material-icons-outlined">description</span> Документы инвентаризации
         </a>
 
-        {% if is_admin_role %}
+        {% if is_admin_role or is_manager_role %}
         <div class="sidebar__section">Система</div>
         <a class="sidebar__link sidebar__link--sub" href="/admins">
           <span class="material-icons-outlined">admin_panel_settings</span> Пользователи
         </a>
+        {% if is_admin_role %}
         <a class="sidebar__link sidebar__link--sub" href="/logs">
           <span class="material-icons-outlined">history</span> Логи
         </a>
         {% endif %}
+        {% endif %}
       </nav>
 
       <div class="sidebar__footer">
+        <div class="sidebar__user-row" title="Текущий склад">
+          <span class="material-icons-outlined">warehouse</span>
+          <span class="sidebar__username">{{ current_warehouse_name or "Склад не назначен" }}</span>
+        </div>
         <div class="sidebar__theme-row">
           <button type="button" class="sidebar__theme-btn" data-theme-pick="light" title="Светлая тема">
             <span class="material-icons-outlined">wb_sunny</span>

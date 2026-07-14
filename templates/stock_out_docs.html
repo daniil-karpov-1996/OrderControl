@@ -5,12 +5,10 @@
   <div class="card">
     <div class="card__header">
       <h2>Документы отпуска</h2>
-      {% if not is_viewer_role %}
       <a class="btn btn-primary" href="/stock/out">
         <span class="material-icons-outlined" style="font-size:18px;vertical-align:middle;">add</span>
         Новый документ
       </a>
-      {% endif %}
     </div>
 
     <form method="get" style="display:flex; gap:10px; align-items:end; flex-wrap:wrap; margin-bottom:6px;">
@@ -45,9 +43,11 @@
             <th><a href="?sort=doc_no&dir={{ 'asc' if sort=='doc_no' and dir=='desc' else 'desc' }}&status={{ filter_status }}&q={{ filter_q }}">Номер</a></th>
             <th><a href="?sort=created&dir={{ 'asc' if sort=='created' and dir=='desc' else 'desc' }}&status={{ filter_status }}&q={{ filter_q }}">Дата</a></th>
             <th><a href="?sort=status&dir={{ 'asc' if sort=='status' and dir=='desc' else 'desc' }}&status={{ filter_status }}&q={{ filter_q }}">Статус</a></th>
+            {% if is_admin_role %}<th>Склад</th>{% endif %}
             <th><a href="?sort=client&dir={{ 'asc' if sort=='client' and dir=='desc' else 'desc' }}&status={{ filter_status }}&q={{ filter_q }}">Клиент</a></th>
             <th class="right">Позиций</th>
             <th class="right">Итого</th>
+            <th class="right">Сумма отпуска</th>
             <th>Примечание</th>
             <th>Автор</th>
             <th></th>
@@ -65,22 +65,27 @@
               <span class="chip chip--warning">Черновик</span>
               {% endif %}
             </td>
+            {% if is_admin_role %}<td>{{ d["warehouse_name"] or "-" }}</td>{% endif %}
             <td>{{ d["client_name"] or "—" }}</td>
             <td class="right">{{ d["item_count"] }}</td>
             <td class="right">{{ fmt_qty(d["total_qty"]) }}</td>
+            <td class="right">{{ fmt_money(d["total_amount"], digits=2) }} {{ app_currency }}</td>
             <td class="muted">{{ (d["note"] or "")[:50] }}{{ "…" if d["note"] and (d["note"]|length) > 50 else "" }}</td>
             <td class="muted">{{ d["created_by_name"] or "—" }}</td>
-            <td>
+            <td style="white-space:nowrap;">
+              <div style="display:flex;gap:6px;align-items:center;">
+              <a class="btn btn-sm btn-ghost" href="/stock/out/pdf?doc_id={{ d['id'] }}&download=1" title="Скачать PDF">PDF</a>
               {% if d["status"] == "draft" or is_admin_role %}
               <a class="btn btn-sm btn-ghost" href="/stock/out?doc_id={{ d['id'] }}">Редактировать</a>
               {% else %}
               <a class="btn btn-sm btn-ghost" href="/stock/out?doc_id={{ d['id'] }}">Открыть</a>
               {% endif %}
+              </div>
             </td>
           </tr>
           {% else %}
           <tr>
-            <td colspan="9" class="muted" style="text-align:center;padding:24px;">Документы не найдены</td>
+            <td colspan="{{ 11 if is_admin_role else 10 }}" class="muted" style="text-align:center;padding:24px;">Документы не найдены</td>
           </tr>
           {% endfor %}
         </tbody>

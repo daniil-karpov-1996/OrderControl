@@ -2,15 +2,10 @@
 {% block content %}
 
 <div class="page">
-
   <div class="card">
-    <div class="page-head">
-      <h2>Редактирование пользователя #{{ admin["id"] }}</h2>
-    </div>
+    <div class="page-head"><h2>Редактирование пользователя #{{ admin["id"] }}</h2></div>
 
-    {% if error %}
-    <div class="error">{{ error }}</div>
-    {% endif %}
+    {% if error %}<div class="error">{{ error }}</div>{% endif %}
 
     <form method="post" class="form-grid--2">
       {% if request.args.get('from_modal') == '1' or request.form.get('from_modal') == '1' %}
@@ -29,17 +24,28 @@
       <div>
         <label>Роль</label>
         {% if is_root %}
-        <div style="padding:10px 0;"><span class="badge badge-positive">Супер-админ</span></div>
+        <input type="hidden" name="role" value="admin">
+        <div style="padding:10px 0;"><span class="badge badge-positive">Руководитель</span></div>
         {% elif is_self_admin %}
-        <div style="padding:10px 0;">Админ</div>
+        <input type="hidden" name="role" value="admin">
+        <div style="padding:10px 0;">Руководитель</div>
         {% else %}
+        {% set role = admin.get("role") or "admin" %}
         <select name="role">
-          {% set role = admin.get("role") or "admin" %}
-          <option value="admin" {% if role=="admin" %}selected{% endif %}>Админ</option>
+          <option value="admin" {% if role=="admin" %}selected{% endif %}>Руководитель</option>
           <option value="manager" {% if role=="manager" %}selected{% endif %}>Менеджер</option>
-          <option value="viewer" {% if role=="viewer" %}selected{% endif %}>Читатель</option>
+          <option value="viewer" {% if role=="viewer" %}selected{% endif %}>Продавец</option>
         </select>
         {% endif %}
+      </div>
+
+      <div>
+        <label>Склад</label>
+        <select name="warehouse_id" required>
+          {% for w in warehouses %}
+          <option value="{{ w['id'] }}" {% if w['id'] == admin.get('warehouse_id') %}selected{% endif %}>{{ w["name"] }}</option>
+          {% endfor %}
+        </select>
       </div>
 
       <div>
@@ -47,14 +53,16 @@
         {% if is_root and current_admin_id != admin["id"] %}
         <div class="muted" style="padding:10px 0;">Недоступно</div>
         {% else %}
-        <input name="password" type="password" placeholder="Оставьте пустым для без изменений">
+        <input name="password" type="password" placeholder="Оставьте пустым без изменений">
         {% endif %}
       </div>
 
       <div>
         <label>Статус</label>
         <label class="check" style="margin-top:2px; cursor:pointer;">
-          <input type="checkbox" name="is_active" value="1" {% if admin["is_active"] or is_root or is_self_admin %}checked{% endif %} {% if is_root or is_self_admin %}disabled{% endif %}>
+          <input type="checkbox" name="is_active" value="1"
+                 {% if admin["is_active"] or is_root or is_self_admin %}checked{% endif %}
+                 {% if is_root or is_self_admin %}disabled{% endif %}>
           Активен
         </label>
       </div>
@@ -65,7 +73,6 @@
       </div>
     </form>
   </div>
-
 </div>
 
 {% endblock %}

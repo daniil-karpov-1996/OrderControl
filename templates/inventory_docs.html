@@ -5,12 +5,10 @@
   <div class="card">
     <div class="card__header">
       <h2>Документы инвентаризации</h2>
-      {% if not is_viewer_role %}
       <a class="btn btn-primary" href="/stock/inventory">
         <span class="material-icons-outlined" style="font-size:18px;vertical-align:middle;">add</span>
         Новая инвентаризация
       </a>
-      {% endif %}
     </div>
 
     <form method="get" style="display:flex; gap:10px; align-items:end; flex-wrap:wrap; margin-bottom:6px;">
@@ -45,6 +43,7 @@
             <th><a href="?sort=doc_no&dir={{ 'asc' if sort=='doc_no' and dir=='desc' else 'desc' }}&status={{ filter_status }}&q={{ filter_q }}">Номер</a></th>
             <th><a href="?sort=created&dir={{ 'asc' if sort=='created' and dir=='desc' else 'desc' }}&status={{ filter_status }}&q={{ filter_q }}">Дата</a></th>
             <th><a href="?sort=status&dir={{ 'asc' if sort=='status' and dir=='desc' else 'desc' }}&status={{ filter_status }}&q={{ filter_q }}">Статус</a></th>
+            {% if is_admin_role %}<th>Склад</th>{% endif %}
             <th class="right">Позиций</th>
             <th class="right">Расхождений</th>
             <th>Примечание</th>
@@ -64,19 +63,20 @@
               <span class="chip chip--warning">Черновик</span>
               {% endif %}
             </td>
+            {% if is_admin_role %}<td>{{ d["warehouse_name"] or "-" }}</td>{% endif %}
             <td class="right">{{ d["item_count"] }}</td>
             <td class="right">{{ d["diff_count"] }}</td>
             <td class="muted">{{ (d["note"] or "")[:50] }}{{ "…" if d["note"] and (d["note"]|length) > 50 else "" }}</td>
             <td class="muted">{{ d["created_by_name"] or "—" }}</td>
             <td>
               <a class="btn btn-sm btn-ghost" href="/stock/inventory?doc_id={{ d['id'] }}">
-                {{ "Редактировать" if d["status"] == "draft" and not is_viewer_role else "Открыть" }}
+                {{ "Редактировать" if d["status"] == "draft" else "Открыть" }}
               </a>
             </td>
           </tr>
           {% else %}
           <tr>
-            <td colspan="8" class="muted" style="text-align:center;padding:24px;">Документы не найдены</td>
+            <td colspan="{{ 9 if is_admin_role else 8 }}" class="muted" style="text-align:center;padding:24px;">Документы не найдены</td>
           </tr>
           {% endfor %}
         </tbody>

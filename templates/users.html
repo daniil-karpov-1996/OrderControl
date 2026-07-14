@@ -2,90 +2,118 @@
 {% block content %}
 
 <div class="page">
-
   <div class="card">
-    <div class="page-head">
-      <h2>Пользователи</h2>
-    </div>
+    <div class="page-head"><h2>Пользователи</h2></div>
 
-    {% if error %}
-    <div class="error">{{ error }}</div>
-    {% endif %}
-
-    {% if is_admin_role %}
     <div class="section-title">Добавить пользователя</div>
-    {% set f = form or {} %}
-    <form method="post" class="form-grid--4">
+    <form method="post" class="form-grid--4" id="createUserForm">
+      <input type="hidden" name="action" value="create_user">
       <div>
         <label>Логин *</label>
-        <input name="username" placeholder="Логин" required value="{{ f.get('username', '') }}">
+        <input name="username" placeholder="Логин" required>
       </div>
       <div>
         <label>Пароль *</label>
-        <input name="password" type="password" placeholder="Пароль" required>
+        <input name="password" type="password" placeholder="Пароль" required minlength="8"
+               title="Минимум 8 символов"
+               autocomplete="new-password">
       </div>
       <div>
         <label>Роль</label>
+        {% if is_manager_role %}
+        <input type="hidden" name="role" value="viewer">
+        <div style="padding:10px 0;">Продавец</div>
+        {% else %}
         <select name="role" required>
-          <option value="admin" {% if f.get('role')=='admin' %}selected{% endif %}>Админ</option>
-          <option value="manager" {% if f.get('role')=='manager' %}selected{% endif %}>Менеджер</option>
-          <option value="viewer" {% if f.get('role','')=='viewer' %}selected{% endif %}>Читатель</option>
+          <option value="" selected disabled hidden>Выберите роль</option>
+          <option value="admin">Руководитель</option>
+          <option value="manager">Менеджер</option>
+          <option value="viewer">Продавец</option>
         </select>
+        {% endif %}
+      </div>
+      <div>
+        <label>Склад</label>
+        {% if is_manager_role %}
+        <input type="hidden" name="warehouse_id" value="{{ current_warehouse_id }}">
+        <div style="padding:10px 0;">{{ current_warehouse_name or "-" }}</div>
+        {% else %}
+        <select name="warehouse_id" required id="createUserWarehouse">
+          <option value="" selected disabled hidden>Выберите склад</option>
+          {% for w in warehouses if w["is_active"] %}
+          <option value="{{ w['id'] }}">{{ w["name"] }}</option>
+          {% endfor %}
+        </select>
+        {% endif %}
       </div>
       <div class="form-actions">
-        <button class="btn btn-primary" type="submit">
-          <span class="material-icons-outlined" style="font-size:16px;">add</span>
+        <button class="btn btn-primary" type="submit" id="createUserSubmit">
+          <span class="material-icons-outlined" style="font-size:16px;">person_add</span>
           Добавить
         </button>
       </div>
     </form>
-    {% endif %}
   </div>
+
+  {% if is_admin_role %}
+  <div class="card">
+    <div class="section-title">Добавить склад</div>
+    <form method="post" class="form-grid--3">
+      <input type="hidden" name="action" value="create_warehouse">
+      <div>
+        <label>Название склада</label>
+        <input name="warehouse_name" required placeholder="Например, Склад №2">
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" type="submit">
+          <span class="material-icons-outlined" style="font-size:16px;">add_business</span>
+          Добавить склад
+        </button>
+      </div>
+    </form>
+  </div>
+  {% endif %}
 
   <div class="card">
     <div class="table-wrap">
       <table>
         <thead>
           <tr>
-            <th style="width: 18%;">Создан</th>
-            <th style="width: 25%;">Логин</th>
-            <th style="width: 18%;">Роль</th>
-            <th style="width: 14%;">Статус</th>
-            <th style="width: 8%;">-</th>
+            <th>Создан</th>
+            <th>Логин</th>
+            <th>Роль</th>
+            <th>Склад</th>
+            <th>Статус</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
           {% for u in users %}
           <tr>
-            <td class="muted">{{ fmt_dt(u["created_at"]) if u.get("created_at") else "-" }}</td>
+            <td class="muted">{{ fmt_dt(u["created_at"]) }}</td>
             <td><strong>{{ u["username"] }}</strong></td>
             <td>
-              {% if u["id"] == 1 %}
-              <span class="chip chip--success">Супер-админ</span>
-              {% elif (u.get("role") or "admin") == "admin" %}
-              Админ
-              {% elif u.get("role") == "manager" %}
-              Менеджер
-              {% elif u.get("role") == "viewer" %}
-              Читатель
-              {% else %}
-              {{ u.get("role") or "admin" }}
-              {% endif %}
+              {% if u["id"] == 1 %}<span class="chip chip--success">Руководитель</span>
+              {% elif u["role"] == "admin" %}Руководитель
+              {% elif u["role"] == "manager" %}Менеджер
+              {% else %}Продавец{% endif %}
+            </td>
+            <td>{{ u.get("warehouse_name") or "-" }}</td>
+            <td>
+              {% if u["is_active"] %}<span class="badge badge-positive">Активен</span>
+              {% else %}<span class="badge badge-negative">Заблокирован</span>{% endif %}
             </td>
             <td>
-              {% if u["is_active"] %}
-              <span class="badge badge-positive">Активен</span>
-              {% else %}
-              <span class="badge badge-negative">Заблокирован</span>
-              {% endif %}
-            </td>
-            <td>
-              <a class="btn btn-edit btn-icon" href="/admins/{{ u['id'] }}?from_modal=1" title="Изменить"
-                data-open-modal data-modal-title="Редактирование пользователя">
+              {% if is_admin_role %}
+              <a class="btn btn-edit btn-icon" href="/admins/{{ u['id'] }}?from_modal=1"
+                 title="Изменить" data-open-modal data-modal-title="Редактирование пользователя">
                 <span class="material-icons-outlined">edit</span>
               </a>
+              {% endif %}
             </td>
           </tr>
+          {% else %}
+          <tr><td colspan="6" class="muted" style="text-align:center;padding:24px;">Пользователей нет</td></tr>
           {% endfor %}
         </tbody>
       </table>
@@ -94,28 +122,28 @@
 
   <script>
     (function () {
-      try {
-        if (window.self === window.top) return;
-        const url = new URL(window.location.href);
-        if (url.searchParams.get("from_modal") !== "1" || !window.parent) return;
-        const title = url.searchParams.get("toast_title");
-        const body = url.searchParams.get("toast_body");
-        if ((title || body) && window.parent.showToast) {
-          window.parent.showToast({
-            title: title || "",
-            body: body || "",
-            variant: url.searchParams.get("toast_variant") || "success",
-            timeoutMs: Number(url.searchParams.get("toast_timeout") || 10000) || 10000,
-            allowHtml: false,
-          });
+      const form = document.getElementById("createUserForm");
+      const button = document.getElementById("createUserSubmit");
+      if (!form || !button) return;
+      form.addEventListener("submit", function (event) {
+        if (!form.checkValidity()) {
+          event.preventDefault();
+          form.reportValidity();
+          if (window.showToast) {
+            window.showToast({
+              title: "Проверьте данные",
+              body: "Заполните отмеченное поле корректно",
+              variant: "error",
+              timeoutMs: 6000
+            });
+          }
+          return;
         }
-        if (window.parent.closeEditModal) {
-          window.parent.closeEditModal({ instant: true });
-        }
-      } catch (_) { }
+        button.disabled = true;
+        button.querySelector("span").textContent = "hourglass_top";
+      });
     })();
   </script>
-
 </div>
 
 {% endblock %}

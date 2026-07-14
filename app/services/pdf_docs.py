@@ -7,7 +7,7 @@ from pathlib import Path
 from fpdf import FPDF
 
 from db import fetchall, fetchone
-from flask_base import fmt_dt, fmt_qty
+from flask_base import APP_CURRENCY, fmt_dt, fmt_money, fmt_qty
 
 _ROOT = Path(__file__).resolve().parents[2]
 
@@ -116,9 +116,10 @@ def _load_stock_in(db, doc_id: int) -> tuple[dict, list[dict]]:
         db,
         """
         SELECT d.id, d.doc_no, d.status, d.note, d.created_at, d.posted_at,
-               u.username AS created_by_name
+               u.username AS created_by_name, w.name AS warehouse_name
         FROM stock_in_docs d
         LEFT JOIN users u ON u.id = d.created_by
+        LEFT JOIN warehouses w ON w.id = d.warehouse_id
         WHERE d.id=?
         """,
         (doc_id,),
@@ -128,7 +129,7 @@ def _load_stock_in(db, doc_id: int) -> tuple[dict, list[dict]]:
     items = fetchall(
         db,
         """
-        SELECT p.name, p.sku, p.unit, i.qty
+        SELECT p.name, p.sku, p.unit, i.qty, i.unit_price
         FROM stock_in_items i
         JOIN products p ON p.id = i.product_id
         WHERE i.doc_id=?
@@ -144,10 +145,12 @@ def _load_stock_out(db, doc_id: int) -> tuple[dict, list[dict]]:
         db,
         """
         SELECT d.id, d.doc_no, d.status, d.note, d.created_at, d.posted_at,
-               u.username AS created_by_name, cl.full_name AS client_name
+               u.username AS created_by_name, cl.full_name AS client_name,
+               w.name AS warehouse_name
         FROM stock_out_docs d
         LEFT JOIN users u ON u.id = d.created_by
         LEFT JOIN clients cl ON cl.id = d.client_id
+        LEFT JOIN warehouses w ON w.id = d.warehouse_id
         WHERE d.id=?
         """,
         (doc_id,),
@@ -157,7 +160,7 @@ def _load_stock_out(db, doc_id: int) -> tuple[dict, list[dict]]:
     items = fetchall(
         db,
         """
-        SELECT p.name, p.sku, p.unit, i.qty
+        SELECT p.name, p.sku, p.unit, i.qty, i.unit_price
         FROM stock_out_items i
         JOIN products p ON p.id = i.product_id
         WHERE i.doc_id=?
@@ -173,9 +176,10 @@ def _load_inventory(db, doc_id: int) -> tuple[dict, list[dict]]:
         db,
         """
         SELECT d.id, d.doc_no, d.status, d.note, d.created_at, d.posted_at,
-               u.username AS created_by_name
+               u.username AS created_by_name, w.name AS warehouse_name
         FROM inventory_docs d
         LEFT JOIN users u ON u.id = d.created_by
+        LEFT JOIN warehouses w ON w.id = d.warehouse_id
         WHERE d.id=?
         """,
         (doc_id,),
@@ -202,7 +206,7 @@ def _pdf_filename(doc_no: str, prefix: str) -> str:
     return f"{safe}.pdf"
 
 
-def build_stock_in_pdf(db, doc_id: int) -> tuple[bytes, str]:
+def build_stock_in_pdf(db, doc_id: int, *, include_prices: bool = False) -> tuple[bytes, str]:
     doc, items = _load_stock_in(db, doc_id)
     pdf = _DocPDF("Документ прихода")
     pdf.alias_nb_pages()
@@ -216,6 +220,7 @@ def build_stock_in_pdf(db, doc_id: int) -> tuple[bytes, str]:
         pdf,
         [
             ("Статус", _status_ru(doc.get("status"))),
+            ("Склад", doc.get("warehouse_name")),
             ("Дата", fmt_dt(doc.get("created_at"))),
             ("Проведён", fmt_dt(doc.get("posted_at")) if doc.get("posted_at") else "—"),
             ("Автор", doc.get("created_by_name")),
@@ -234,17 +239,25 @@ def build_stock_in_pdf(db, doc_id: int) -> tuple[bytes, str]:
         ]
         for n, it in enumerate(items, start=1)
     ]
+    if include_prices:
+        table_rows = [
+            row + [
+                fmt_money(it["unit_price"], digits=2),
+                fmt_money(float(it["qty"]) * float(it["unit_price"]), digits=2),
+            ]
+            for row, it in zip(table_rows, items)
+        ]
     usable = pdf.w - pdf.l_margin - pdf.r_margin
-    _items_table(
-        pdf,
-        ["№", "Товар", "Артикул", "Кол-во", "Ед."],
-        [10, usable - 10 - 32 - 22 - 16, 32, 22, 16],
-        table_rows,
-        ["C", "L", "L", "R", "C"],
-    )
+    if include_prices:
+        _items_table(pdf, ["№", "Товар", "Артикул", "Кол-во", "Ед.", "Цена", "Сумма"], [8, usable - 8 - 25 - 18 - 12 - 25 - 28, 25, 18, 12, 25, 28], table_rows, ["C", "L", "L", "R", "C", "R", "R"])
+    else:
+        _items_table(pdf, ["№", "Товар", "Артикул", "Кол-во", "Ед."], [10, usable - 10 - 32 - 22 - 16, 32, 22, 16], table_rows, ["C", "L", "L", "R", "C"])
     pdf.ln(2)
     pdf.set_font("DocFont", "B", 10)
     pdf.cell(0, 7, f"Позиций: {len(items)} · Итого: {fmt_qty(total_qty)}", ln=True)
+    if include_prices:
+        total_amount = sum(float(it["qty"]) * float(it["unit_price"]) for it in items)
+        pdf.cell(0, 7, f"Сумма прихода: {fmt_money(total_amount, digits=2)} {APP_CURRENCY}", ln=True)
 
     buf = BytesIO()
     pdf.output(buf)
@@ -265,6 +278,7 @@ def build_stock_out_pdf(db, doc_id: int) -> tuple[bytes, str]:
         pdf,
         [
             ("Статус", _status_ru(doc.get("status"))),
+            ("Склад", doc.get("warehouse_name")),
             ("Клиент", doc.get("client_name")),
             ("Дата", fmt_dt(doc.get("created_at"))),
             ("Проведён", fmt_dt(doc.get("posted_at")) if doc.get("posted_at") else "—"),
@@ -281,20 +295,24 @@ def build_stock_out_pdf(db, doc_id: int) -> tuple[bytes, str]:
             _safe_text(it.get("sku")),
             fmt_qty(it["qty"]),
             _safe_text(it.get("unit") or "шт"),
+            fmt_money(it["unit_price"], digits=2),
+            fmt_money(float(it["qty"]) * float(it["unit_price"]), digits=2),
         ]
         for n, it in enumerate(items, start=1)
     ]
     usable = pdf.w - pdf.l_margin - pdf.r_margin
     _items_table(
         pdf,
-        ["№", "Товар", "Артикул", "Кол-во", "Ед."],
-        [10, usable - 10 - 32 - 22 - 16, 32, 22, 16],
+        ["№", "Товар", "Артикул", "Кол-во", "Ед.", "Цена", "Сумма"],
+        [8, usable - 8 - 25 - 18 - 12 - 25 - 28, 25, 18, 12, 25, 28],
         table_rows,
-        ["C", "L", "L", "R", "C"],
+        ["C", "L", "L", "R", "C", "R", "R"],
     )
     pdf.ln(2)
     pdf.set_font("DocFont", "B", 10)
     pdf.cell(0, 7, f"Позиций: {len(items)} · Итого: {fmt_qty(total_qty)}", ln=True)
+    total_amount = sum(float(it["qty"]) * float(it["unit_price"]) for it in items)
+    pdf.cell(0, 7, f"Сумма отпуска: {fmt_money(total_amount, digits=2)} {APP_CURRENCY}", ln=True)
 
     buf = BytesIO()
     pdf.output(buf)
@@ -318,6 +336,7 @@ def build_inventory_pdf(db, doc_id: int) -> tuple[bytes, str]:
         pdf,
         [
             ("Статус", _status_ru(doc.get("status"))),
+            ("Склад", doc.get("warehouse_name")),
             ("Дата", fmt_dt(doc.get("created_at"))),
             ("Проведён", fmt_dt(doc.get("posted_at")) if doc.get("posted_at") else "—"),
             ("Автор", doc.get("created_by_name")),
@@ -360,10 +379,10 @@ def build_inventory_pdf(db, doc_id: int) -> tuple[bytes, str]:
     return buf.getvalue(), _pdf_filename(doc.get("doc_no"), "INV")
 
 
-def build_document_pdf(db, doc_kind: str, doc_id: int) -> tuple[bytes, str]:
+def build_document_pdf(db, doc_kind: str, doc_id: int, *, include_purchase_prices: bool = False) -> tuple[bytes, str]:
     kind = (doc_kind or "").strip().lower()
     if kind in ("stock_in", "in"):
-        return build_stock_in_pdf(db, doc_id)
+        return build_stock_in_pdf(db, doc_id, include_prices=include_purchase_prices)
     if kind in ("stock_out", "out"):
         return build_stock_out_pdf(db, doc_id)
     if kind in ("inventory", "inv"):

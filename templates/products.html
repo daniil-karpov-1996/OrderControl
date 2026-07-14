@@ -11,7 +11,7 @@
     <form method="get" action="/products" style="display:flex; gap:10px; align-items:end; flex-wrap:wrap; margin-bottom:4px;">
       <div style="min-width:160px; max-width:200px;">
         <label>Категория</label>
-        <select name="category_id">
+        <select name="category_id" id="productFilterCategory">
           <option value="">Все категории</option>
           {% for c in categories %}
           <option value="{{ c['id'] }}" {% if str(c['id']) == str(selected_category_id or '') %}selected{% endif %}>
@@ -22,10 +22,10 @@
       </div>
       <div style="min-width:160px; max-width:200px;">
         <label>Подкатегория</label>
-        <select name="subcategory_id">
+        <select name="subcategory_id" id="productFilterSubcategory">
           <option value="">Все подкатегории</option>
           {% for s in subcategories %}
-          <option value="{{ s['id'] }}" {% if str(s['id']) == str(selected_subcategory_id or '') %}selected{% endif %}>
+          <option value="{{ s['id'] }}" data-category-id="{{ s['category_id'] }}" {% if str(s['id']) == str(selected_subcategory_id or '') %}selected{% endif %}>
             {{ s["name"] }}
           </option>
           {% endfor %}
@@ -53,7 +53,7 @@
     </form>
   </div>
 
-  {% if not is_viewer_role %}
+  {% if is_admin_role %}
   <div class="card">
     <div class="section-title">Добавить товар</div>
 
@@ -98,6 +98,16 @@
       <div>
         <label>Мин. остаток</label>
         <input name="min_stock" type="number" step="0.01" min="0" value="{{ f.get('min_stock', 0) }}">
+      </div>
+      {% if is_admin_role %}
+      <div>
+        <label>Цена прихода</label>
+        <input name="purchase_price" type="number" step="0.01" min="0" value="{{ f.get('purchase_price', 0) }}">
+      </div>
+      {% endif %}
+      <div>
+        <label>Цена отпуска</label>
+        <input name="sale_price" type="number" step="0.01" min="0" value="{{ f.get('sale_price', 0) }}">
       </div>
       <div>
         <label>Фото товара</label>
@@ -156,6 +166,8 @@
             </th>
             <th style="width: 7%;">Ед.</th>
             <th class="right" style="width: 8%;">Мин.</th>
+            {% if is_admin_role %}<th class="right">Цена прихода</th>{% endif %}
+            <th class="right">Цена отпуска</th>
             <th class="right" style="width: 10%;">
               <a class="sort" href="/products?sort=stock&dir={{ next_dir_stock }}&page=1&per_page={{ per_page }}{{ filter_qs }}">
                 Остаток {% if sort == "stock" %}{% if dir == "asc" %}⬆{% else %}⬇{% endif %}{% else %}⇅{% endif %}
@@ -180,6 +192,8 @@
             <td class="muted">{{ p["subcategory_name"] or "-" }}</td>
             <td>{{ p["unit"] or "шт" }}</td>
             <td class="right">{{ fmt_qty(p["min_stock"]) }}</td>
+            {% if is_admin_role %}<td class="right">{{ fmt_money(p["purchase_price"], digits=2) }} {{ app_currency }}</td>{% endif %}
+            <td class="right">{{ fmt_money(p["sale_price"], digits=2) }} {{ app_currency }}</td>
             <td class="right">
               {% if p["balance"] < p["min_stock"] %}
               <span class="negative">{{ fmt_qty(p["balance"]) }}</span>
@@ -199,7 +213,7 @@
           {% endfor %}
           {% if not products %}
           <tr>
-            <td colspan="9" class="muted" style="text-align:center;padding:24px;">Товары не найдены</td>
+            <td colspan="{{ 11 if is_admin_role else 10 }}" class="muted" style="text-align:center;padding:24px;">Товары не найдены</td>
           </tr>
           {% endif %}
         </tbody>
@@ -224,6 +238,29 @@
   </div>
 
   <script>
+    (function () {
+      const cat = document.getElementById("productFilterCategory");
+      const sub = document.getElementById("productFilterSubcategory");
+      if (!cat || !sub) return;
+
+      function syncFilterSubcategories(resetSelection) {
+        const categoryId = cat.value || "";
+        Array.from(sub.options).forEach(function (option) {
+          if (!option.value) return;
+          const matches = !categoryId || option.getAttribute("data-category-id") === categoryId;
+          option.hidden = !matches;
+          option.disabled = !matches;
+          if (!matches && option.selected) option.selected = false;
+        });
+        if (resetSelection) sub.value = "";
+      }
+
+      cat.addEventListener("change", function () {
+        syncFilterSubcategories(true);
+      });
+      syncFilterSubcategories(false);
+    })();
+
     (function () {
       const cat = document.getElementById("productFormCategory");
       const sub = document.getElementById("productFormSubcategory");
