@@ -55,13 +55,6 @@
         <input name="min_stock" type="number" step="0.01" min="0"
           value="{{ (form.get('min_stock') if form else product['min_stock'] or 0) }}">
       </div>
-      {% if is_admin_role %}
-      <div>
-        <label>Цена прихода</label>
-        <input name="purchase_price" type="number" step="0.01" min="0"
-          value="{{ (form.get('purchase_price') if form else product['purchase_price'] or 0) }}">
-      </div>
-      {% endif %}
       <div>
         <label>Цена отпуска</label>
         <input name="sale_price" type="number" step="0.01" min="0"

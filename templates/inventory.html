@@ -27,7 +27,11 @@
       {% if doc %}<input type="hidden" name="doc_id" value="{{ doc['id'] }}">{% endif %}
       <input type="hidden" name="action" id="inventoryAction" value="{{ 'update_posted' if can_edit_posted else 'save_draft' }}">
 
-      <div class="inventory-toolbar">
+      <div class="inventory-toolbar inventory-toolbar--document">
+        <div>
+          <label>Название документа</label>
+          <input name="doc_no" required maxlength="100" value="{{ doc['doc_no'] if doc else (next_doc_no or 'INV-00001') }}" {% if form_locked %}readonly{% endif %}>
+        </div>
         <div>
           <label>Дата</label>
           <input type="datetime-local" name="created_at" step="1" value="{{ (doc and dt_local_for_input(doc['created_at'])) or now_local }}" {% if form_locked %}readonly{% endif %}>

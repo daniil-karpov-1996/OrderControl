@@ -105,8 +105,9 @@ CREATE TABLE IF NOT EXISTS subcategories (
 -- ================= PRODUCTS =================
 CREATE TABLE IF NOT EXISTS products (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  warehouse_id INTEGER NOT NULL,
   subcategory_id INTEGER NOT NULL,
-  sku TEXT UNIQUE,
+  sku TEXT,
   name TEXT NOT NULL,
   image_path TEXT,
   unit TEXT NOT NULL DEFAULT 'шт',
@@ -115,7 +116,9 @@ CREATE TABLE IF NOT EXISTS products (
   min_stock REAL NOT NULL DEFAULT 0,
   is_active INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  FOREIGN KEY(subcategory_id) REFERENCES subcategories(id) ON DELETE CASCADE
+  FOREIGN KEY(warehouse_id) REFERENCES warehouses(id),
+  FOREIGN KEY(subcategory_id) REFERENCES subcategories(id) ON DELETE CASCADE,
+  UNIQUE(warehouse_id, sku)
 );
 
 CREATE INDEX IF NOT EXISTS idx_products_subcat ON products(subcategory_id);
@@ -271,6 +274,9 @@ class DB:
             cls.conn.execute("ALTER TABLE products ADD COLUMN purchase_price REAL NOT NULL DEFAULT 0")
         if not _column_exists(cls.conn, "products", "sale_price"):
             cls.conn.execute("ALTER TABLE products ADD COLUMN sale_price REAL NOT NULL DEFAULT 0")
+        products_need_warehouse = not _column_exists(cls.conn, "products", "warehouse_id")
+        if products_need_warehouse:
+            cls.conn.execute("ALTER TABLE products ADD COLUMN warehouse_id INTEGER")
         if not _column_exists(cls.conn, "stock_in_items", "unit_price"):
             cls.conn.execute("ALTER TABLE stock_in_items ADD COLUMN unit_price REAL NOT NULL DEFAULT 0")
         if not _column_exists(cls.conn, "stock_out_items", "unit_price"):
@@ -304,6 +310,29 @@ class DB:
             "CREATE INDEX IF NOT EXISTS idx_inventory_docs_warehouse_created ON inventory_docs(warehouse_id, created_at DESC)"
         )
         default_warehouse_id = ensure_default_warehouse(cls.conn)
+        if products_need_warehouse:
+            cls.conn.execute(
+                """
+                UPDATE products
+                SET warehouse_id=COALESCE(
+                  (SELECT sm.warehouse_id
+                   FROM stock_moves sm
+                   WHERE sm.product_id=products.id AND sm.warehouse_id IS NOT NULL
+                   ORDER BY sm.id DESC LIMIT 1),
+                  ?
+                )
+                WHERE warehouse_id IS NULL
+                """,
+                (default_warehouse_id,),
+            )
+        else:
+            cls.conn.execute(
+                "UPDATE products SET warehouse_id=? WHERE warehouse_id IS NULL",
+                (default_warehouse_id,),
+            )
+        cls.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_products_warehouse_name ON products(warehouse_id, name)"
+        )
         cls.conn.execute(
             "UPDATE users SET warehouse_id=? WHERE warehouse_id IS NULL",
             (default_warehouse_id,),
@@ -352,6 +381,7 @@ class DB:
             """,
             (default_warehouse_id,),
         )
+        _migrate_products_sku_scope(cls.conn)
         ensure_default_admin(cls.conn)
         cls.conn.commit()
 
@@ -381,3 +411,73 @@ def _column_exists(conn, table: str, col: str) -> bool:
     rows = cur.fetchall()
     cur.close()
     return any(r[1] == col for r in rows)
+
+
+def _products_has_global_sku_unique(conn: sqlite3.Connection) -> bool:
+    for index_row in conn.execute("PRAGMA index_list(products)").fetchall():
+        if not int(index_row["unique"]):
+            continue
+        columns = [
+            row["name"]
+            for row in conn.execute(
+                f"PRAGMA index_info({index_row['name']})"
+            ).fetchall()
+        ]
+        if columns == ["sku"]:
+            return True
+    return False
+
+
+def _migrate_products_sku_scope(conn: sqlite3.Connection) -> None:
+    if not _products_has_global_sku_unique(conn):
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_products_subcat ON products(subcategory_id)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_products_warehouse_name ON products(warehouse_id, name)"
+        )
+        return
+
+    conn.commit()
+    conn.execute("PRAGMA foreign_keys=OFF")
+    try:
+        conn.executescript(
+            """
+            BEGIN;
+            CREATE TABLE products_scoped (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              warehouse_id INTEGER NOT NULL,
+              subcategory_id INTEGER NOT NULL,
+              sku TEXT,
+              name TEXT NOT NULL,
+              image_path TEXT,
+              unit TEXT NOT NULL DEFAULT 'шт',
+              purchase_price REAL NOT NULL DEFAULT 0,
+              sale_price REAL NOT NULL DEFAULT 0,
+              min_stock REAL NOT NULL DEFAULT 0,
+              is_active INTEGER NOT NULL DEFAULT 1,
+              created_at TEXT NOT NULL DEFAULT (datetime('now')),
+              FOREIGN KEY(warehouse_id) REFERENCES warehouses(id),
+              FOREIGN KEY(subcategory_id) REFERENCES subcategories(id) ON DELETE CASCADE,
+              UNIQUE(warehouse_id, sku)
+            );
+            INSERT INTO products_scoped(
+              id, warehouse_id, subcategory_id, sku, name, image_path, unit,
+              purchase_price, sale_price, min_stock, is_active, created_at
+            )
+            SELECT
+              id, warehouse_id, subcategory_id, sku, name, image_path, unit,
+              purchase_price, sale_price, min_stock, is_active, created_at
+            FROM products;
+            DROP TABLE products;
+            ALTER TABLE products_scoped RENAME TO products;
+            CREATE INDEX idx_products_subcat ON products(subcategory_id);
+            CREATE INDEX idx_products_warehouse_name ON products(warehouse_id, name);
+            COMMIT;
+            """
+        )
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.execute("PRAGMA foreign_keys=ON")

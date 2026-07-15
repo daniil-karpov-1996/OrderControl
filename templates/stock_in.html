@@ -60,7 +60,7 @@
           </div>
           <div class="stockout-pick-list" id="stockInPickList">
             {% for p in products %}
-            <div class="stockout-pick-item {% if not p['is_active'] %}stockout-pick-item--inactive{% endif %}" data-id="{{ p['id'] }}" data-category-id="{{ p['category_id'] }}" data-subcategory-id="{{ p['subcategory_id'] }}" data-unit="{{ p['unit'] or 'шт' }}" data-name="{{ p['name'] }}" data-sku="{{ p['sku'] or '' }}" data-img="{{ p['image_path'] or '' }}"{% if is_admin_role %} data-price="{{ p['purchase_price'] or 0 }}"{% endif %}>
+            <div class="stockout-pick-item {% if not p['is_active'] %}stockout-pick-item--inactive{% endif %}" data-id="{{ p['id'] }}" data-category-id="{{ p['category_id'] }}" data-subcategory-id="{{ p['subcategory_id'] }}" data-unit="{{ p['unit'] or 'шт' }}" data-name="{{ p['name'] }}" data-sku="{{ p['sku'] or '' }}" data-img="{{ p['image_path'] or '' }}">
               {% if p['image_path'] %}
               <img class="stockout-pick-item__img" src="{{ p['image_path'] }}" alt="">
               {% else %}
@@ -70,7 +70,7 @@
               {% endif %}
               <div class="stockout-pick-item__info">
                 <div class="stockout-pick-item__name">{{ p["name"] }}</div>
-                <div class="stockout-pick-item__meta">{{ p["sku"] or "—" }} · {{ p["unit"] or "шт" }}{% if is_admin_role %} · {{ fmt_money(p['purchase_price'], digits=2) }} {{ app_currency }}{% endif %}{% if not p['is_active'] %} · неактивен{% endif %}</div>
+                <div class="stockout-pick-item__meta">{{ p["sku"] or "—" }} · {{ p["unit"] or "шт" }}{% if not p['is_active'] %} · неактивен{% endif %}</div>
               </div>
             </div>
             {% endfor %}
@@ -90,7 +90,11 @@
         </aside>
 
         <section class="stockout-main">
-          <div class="stockout-toolbar" style="grid-template-columns: 220px 1fr;">
+          <div class="stockout-toolbar stockout-toolbar--in">
+            <div>
+              <label>Название документа</label>
+              <input name="doc_no" required maxlength="100" value="{{ doc['doc_no'] if doc else (next_doc_no or 'IN-00001') }}" {% if form_locked %}readonly{% endif %}>
+            </div>
             <div>
               <label>Дата</label>
               <input type="datetime-local" name="created_at" step="1" value="{{ (doc and dt_local_for_input(doc['created_at'])) or now_local }}" {% if form_locked %}readonly{% endif %}>
@@ -244,7 +248,7 @@
     var sku = selectedItem.getAttribute("data-sku") || "-";
     var unit = selectedItem.getAttribute("data-unit") || "шт";
     var img = selectedItem.getAttribute("data-img") || "";
-    var price = Number(selectedItem.getAttribute("data-price") || "0");
+    var price = 0;
     var imgHtml = img ? '<img src="' + img + '" class="stockout-item-row-img" alt="">' : '';
     var tr = document.createElement("tr");
     tr.innerHTML =

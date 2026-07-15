@@ -16,14 +16,16 @@
   <script>
     (function () {
       try {
+        var sp = new URLSearchParams(window.location.search || "");
+        var returnTo = sp.get("return_to") || "/";
+        if (!returnTo.startsWith("/") || returnTo.startsWith("//")) returnTo = "/";
         if (window.self === window.top) {
-          window.location.replace("/");
+          window.location.replace(returnTo);
           return;
         }
         if (!window.parent) return;
         var p = window.location.pathname || "";
         if (p !== "/modal/close" && !p.endsWith("/modal/close")) return;
-        var sp = new URLSearchParams(window.location.search || "");
         if (sp.get("from_modal") !== "1") return;
         var title = sp.get("toast_title");
         var body = sp.get("toast_body");

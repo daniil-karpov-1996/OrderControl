@@ -680,6 +680,30 @@ html[data-theme="dark"] .app-user-menu__toggle-row:hover {
   border-top: 1px solid rgba(255, 255, 255, .08);
 }
 
+.sidebar__warehouse-form {
+  padding: 4px 8px 8px;
+}
+
+.sidebar__warehouse-form label {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0;
+  opacity: .48;
+}
+
+.sidebar__warehouse-form select {
+  width: 100%;
+  min-width: 0;
+  padding: 7px 28px 7px 9px;
+  font-size: 12.5px;
+  color: inherit;
+  background-color: rgba(255, 255, 255, .07);
+  border: 1px solid rgba(255, 255, 255, .14);
+}
+
 .sidebar__theme-row {
   display: flex;
   gap: 4px;
@@ -1539,6 +1563,10 @@ tbody tr:hover td {
   margin-bottom: 12px;
 }
 
+.inventory-toolbar--document {
+  grid-template-columns: 190px 220px minmax(0, 1fr);
+}
+
 .inventory-filters {
   display: grid;
   grid-template-columns: 1fr 180px 180px auto;
@@ -1645,6 +1673,14 @@ html[data-theme="dark"] .inv-diff--minus {
   display: grid;
   grid-template-columns: 220px 220px 1fr;
   gap: 10px;
+}
+
+.stockout-toolbar--in {
+  grid-template-columns: 190px 220px minmax(0, 1fr);
+}
+
+.stockout-toolbar--out {
+  grid-template-columns: 190px 220px 220px minmax(0, 1fr);
 }
 
 .stockout-note {
@@ -1782,6 +1818,13 @@ html[data-theme="dark"] .inv-diff--minus {
   .stockout-panel {
     position: static;
     order: -1;
+  }
+}
+
+@media (max-width: 700px) {
+  .stockout-toolbar,
+  .inventory-toolbar--document {
+    grid-template-columns: 1fr;
   }
 }
 

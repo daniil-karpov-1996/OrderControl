@@ -3,7 +3,10 @@
 
 <div class="page">
   <div class="page-head" style="margin-bottom:14px;">
-    <h2>Каталог</h2>
+    <div>
+      <h2>Каталог</h2>
+      <div class="muted">{{ current_warehouse_name or "Склад не назначен" }}</div>
+    </div>
     <a class="btn btn-sm btn-ghost" href="/products">
       <span class="material-icons-outlined" style="font-size:16px;">list</span> Таблица товаров
     </a>
@@ -79,7 +82,8 @@
             </div>
           </div>
           <div class="catalog-product-card__actions">
-            <a class="btn btn-sm btn-ghost" href="/products/{{ p['id'] }}">
+            <a class="btn btn-sm btn-ghost" href="/products/{{ p['id'] }}?from_modal=1"
+              data-open-modal data-modal-title="Редактирование товара" title="Изменить">
               <span class="material-icons-outlined" style="font-size:16px;">edit</span>
             </a>
           </div>

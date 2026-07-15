@@ -1,0 +1,42 @@
+ * Tip: There are .env files present. Install python-dotenv to use them.
+WARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.
+ * Running on http://127.0.0.1:4006
+Press CTRL+C to quit
+127.0.0.1 - - [15/Jul/2026 11:31:26] "GET /login HTTP/1.1" 200 -
+127.0.0.1 - - [15/Jul/2026 11:32:21] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [15/Jul/2026 11:32:21] "GET /static/app.css?v=v1.1 HTTP/1.1" 200 -
+127.0.0.1 - - [15/Jul/2026 11:32:21] "GET /static/favicon.png HTTP/1.1" 304 -
+127.0.0.1 - - [15/Jul/2026 11:32:21] "GET /static/app.js?v=v1.1 HTTP/1.1" 304 -
+127.0.0.1 - - [15/Jul/2026 11:32:23] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [15/Jul/2026 11:32:23] "GET /static/app.css?v=v1.1 HTTP/1.1" 304 -
+127.0.0.1 - - [15/Jul/2026 11:32:23] "GET /static/favicon.png HTTP/1.1" 304 -
+127.0.0.1 - - [15/Jul/2026 11:32:23] "GET /static/app.js?v=v1.1 HTTP/1.1" 304 -
+127.0.0.1 - - [15/Jul/2026 11:32:41] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [15/Jul/2026 11:32:41] "GET /static/favicon.png HTTP/1.1" 304 -
+127.0.0.1 - - [15/Jul/2026 11:32:41] "GET /static/app.css?v=v1.1 HTTP/1.1" 304 -
+127.0.0.1 - - [15/Jul/2026 11:32:41] "GET /static/app.js?v=v1.1 HTTP/1.1" 304 -
+127.0.0.1 - - [15/Jul/2026 11:32:41] "GET /static/favicon.png?v=v1.1 HTTP/1.1" 304 -
+127.0.0.1 - - [15/Jul/2026 11:32:42] "GET /catalog HTTP/1.1" 200 -
+127.0.0.1 - - [15/Jul/2026 11:32:42] "GET /static/app.css?v=v1.1 HTTP/1.1" 304 -
+127.0.0.1 - - [15/Jul/2026 11:32:42] "GET /static/favicon.png HTTP/1.1" 304 -
+127.0.0.1 - - [15/Jul/2026 11:32:42] "GET /static/uploads/products/792a824a930e4d2f9e2f53cc3e2e7335.jpg HTTP/1.1" 304 -
+127.0.0.1 - - [15/Jul/2026 11:32:42] "GET /static/app.js?v=v1.1 HTTP/1.1" 304 -
+127.0.0.1 - - [15/Jul/2026 11:32:43] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [15/Jul/2026 11:32:43] "GET /static/app.css?v=v1.1 HTTP/1.1" 304 -
+127.0.0.1 - - [15/Jul/2026 11:32:43] "GET /static/favicon.png HTTP/1.1" 304 -
+127.0.0.1 - - [15/Jul/2026 11:32:43] "GET /static/app.js?v=v1.1 HTTP/1.1" 304 -
+127.0.0.1 - - [15/Jul/2026 11:32:48] "POST /warehouse/select HTTP/1.1" 302 -
+127.0.0.1 - - [15/Jul/2026 11:32:48] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [15/Jul/2026 11:32:48] "GET /static/app.css?v=v1.1 HTTP/1.1" 304 -
+127.0.0.1 - - [15/Jul/2026 11:32:48] "GET /static/favicon.png HTTP/1.1" 304 -
+127.0.0.1 - - [15/Jul/2026 11:32:48] "GET /static/app.js?v=v1.1 HTTP/1.1" 304 -
+127.0.0.1 - - [15/Jul/2026 11:32:54] "POST /warehouse/select HTTP/1.1" 302 -
+127.0.0.1 - - [15/Jul/2026 11:32:54] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [15/Jul/2026 11:32:54] "GET /static/app.css?v=v1.1 HTTP/1.1" 304 -
+127.0.0.1 - - [15/Jul/2026 11:32:54] "GET /static/favicon.png HTTP/1.1" 304 -
+127.0.0.1 - - [15/Jul/2026 11:32:54] "GET /static/app.js?v=v1.1 HTTP/1.1" 304 -
+127.0.0.1 - - [15/Jul/2026 11:32:55] "GET /catalog HTTP/1.1" 200 -
+127.0.0.1 - - [15/Jul/2026 11:32:55] "GET /static/app.css?v=v1.1 HTTP/1.1" 304 -
+127.0.0.1 - - [15/Jul/2026 11:32:55] "GET /static/favicon.png HTTP/1.1" 304 -
+127.0.0.1 - - [15/Jul/2026 11:32:55] "GET /static/uploads/products/792a824a930e4d2f9e2f53cc3e2e7335.jpg HTTP/1.1" 304 -
+127.0.0.1 - - [15/Jul/2026 11:32:55] "GET /static/app.js?v=v1.1 HTTP/1.1" 304 -

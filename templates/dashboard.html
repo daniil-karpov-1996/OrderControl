@@ -4,7 +4,10 @@
 <div class="page">
 
   <div class="page-head" style="margin-bottom:14px;">
-    <h2>Склад</h2>
+    <div>
+      <h2>Склад</h2>
+      <div class="muted">{{ current_warehouse_name or "Склад не назначен" }}</div>
+    </div>
     <div class="dash-actions" style="margin-bottom:0;">
       <a class="dash-action-btn" href="/stock/in">
         <span class="material-icons-outlined">add_circle_outline</span> Приход

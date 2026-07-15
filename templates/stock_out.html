@@ -94,7 +94,11 @@
         </aside>
 
         <section class="stockout-main">
-          <div class="stockout-toolbar">
+          <div class="stockout-toolbar stockout-toolbar--out">
+            <div>
+              <label>Название документа</label>
+              <input name="doc_no" required maxlength="100" value="{{ doc['doc_no'] if doc else (next_doc_no or 'OUT-00001') }}" {% if form_locked %}readonly{% endif %}>
+            </div>
             <div>
               <label>Клиент</label>
               <select name="client_id" class="ic-combobox" {% if form_locked %}disabled{% endif %}>
@@ -194,6 +198,7 @@
   var postBtn = document.getElementById("postDocBtn");
   var updatePostedBtn = document.getElementById("updatePostedBtn");
   var canEditPosted = {{ can_edit_posted|default(false)|tojson }};
+  var currentDocId = {{ (doc['id'] if doc else none)|tojson }};
   var docQtyByProduct = {{ doc_qty_by_product|default({})|tojson }};
   var productCategoryMap = {{ product_category_map|default({})|tojson }};
   var lockedCategoryId = {{ doc_category_id|tojson }};
@@ -448,7 +453,7 @@
     var cell = tr.querySelector(".stockout-balance-cell");
     var pid = cell && cell.getAttribute("data-product-id");
     if (pid && !canEditPosted) {
-      fetch("/api/stock/balance?product_id=" + encodeURIComponent(pid), { credentials: "same-origin" })
+      fetch("/api/stock/balance?product_id=" + encodeURIComponent(pid) + (currentDocId ? "&doc_id=" + encodeURIComponent(currentDocId) : ""), { credentials: "same-origin" })
         .then(function (r) { return r.ok ? r.json() : null; })
         .then(function (data) {
           if (!data || data.balance == null) return;
@@ -462,7 +467,7 @@
   });
   if (canEditPosted) {
     function refreshPostedBalances(pid, balCell, pickEl) {
-      fetch("/api/stock/balance?product_id=" + encodeURIComponent(pid), { credentials: "same-origin" })
+      fetch("/api/stock/balance?product_id=" + encodeURIComponent(pid) + (currentDocId ? "&doc_id=" + encodeURIComponent(currentDocId) : ""), { credentials: "same-origin" })
         .then(function (r) { return r.ok ? r.json() : null; })
         .then(function (data) {
           if (!data || data.balance == null) return;

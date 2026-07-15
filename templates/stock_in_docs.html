@@ -22,7 +22,7 @@
       </div>
       <div style="flex:1; min-width:200px; max-width:350px;">
         <label>Поиск</label>
-        <input name="q" placeholder="Номер, примечание…" value="{{ filter_q }}">
+        <input name="q" placeholder="Название, примечание…" value="{{ filter_q }}">
       </div>
       <div style="display:flex; gap:6px;">
         <button class="btn btn-primary btn-icon" type="submit" title="Найти">
@@ -40,7 +40,7 @@
       <table>
         <thead>
           <tr>
-            <th><a href="?sort=doc_no&dir={{ 'asc' if sort=='doc_no' and dir=='desc' else 'desc' }}&status={{ filter_status }}&q={{ filter_q }}">Номер</a></th>
+            <th><a href="?sort=doc_no&dir={{ 'asc' if sort=='doc_no' and dir=='desc' else 'desc' }}&status={{ filter_status }}&q={{ filter_q }}">Документ</a></th>
             <th><a href="?sort=created&dir={{ 'asc' if sort=='created' and dir=='desc' else 'desc' }}&status={{ filter_status }}&q={{ filter_q }}">Дата</a></th>
             <th><a href="?sort=status&dir={{ 'asc' if sort=='status' and dir=='desc' else 'desc' }}&status={{ filter_status }}&q={{ filter_q }}">Статус</a></th>
             {% if is_admin_role %}<th>Склад</th>{% endif %}

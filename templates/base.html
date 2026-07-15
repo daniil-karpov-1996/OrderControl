@@ -95,10 +95,22 @@
       </nav>
 
       <div class="sidebar__footer">
+        {% if is_admin_role and available_warehouses %}
+        <form class="sidebar__warehouse-form" method="post" action="/warehouse/select">
+          <input type="hidden" name="next" value="{{ request.full_path if request.query_string else request.path }}">
+          <label for="activeWarehouse">Рабочий склад</label>
+          <select id="activeWarehouse" name="warehouse_id" onchange="this.form.submit()">
+            {% for warehouse in available_warehouses %}
+            <option value="{{ warehouse['id'] }}" {% if warehouse['id'] == current_warehouse_id %}selected{% endif %}>{{ warehouse['name'] }}</option>
+            {% endfor %}
+          </select>
+        </form>
+        {% else %}
         <div class="sidebar__user-row" title="Текущий склад">
           <span class="material-icons-outlined">warehouse</span>
           <span class="sidebar__username">{{ current_warehouse_name or "Склад не назначен" }}</span>
         </div>
+        {% endif %}
         <div class="sidebar__theme-row">
           <button type="button" class="sidebar__theme-btn" data-theme-pick="light" title="Светлая тема">
             <span class="material-icons-outlined">wb_sunny</span>

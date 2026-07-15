@@ -158,6 +158,7 @@ def create_app() -> Flask:
         LoginHandler,
         LogoutHandler,
         ModalCloseHandler,
+        WarehouseSelectHandler,
         DashboardHandler,
         ClientsHandler,
         ClientEditHandler,
@@ -219,6 +220,11 @@ def create_app() -> Flask:
     @admin_required
     def dashboard():
         return DashboardHandler().get()
+
+    @app.route("/warehouse/select", methods=["POST"])
+    @admin_required
+    def warehouse_select():
+        return WarehouseSelectHandler().post()
 
     @app.route("/clients", methods=["GET", "POST"])
     @admin_required

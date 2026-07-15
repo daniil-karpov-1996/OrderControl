@@ -6,7 +6,7 @@ from datetime import date, datetime, timedelta
 
 from flask import abort, g, redirect, render_template, request, session, url_for
 
-from db import fetchone
+from db import fetchall, fetchone
 from services.log import audit_log
 from settings import APP_VERSION, TZ_OFFSET_HOURS, APP_CURRENCY
 
@@ -206,9 +206,56 @@ class FlaskBaseHandler:
             "SELECT warehouse_id FROM users WHERE id=?",
             (int(self.current_admin_id),),
         )
-        if not row or row["warehouse_id"] is None:
+        assigned_id = int(row["warehouse_id"]) if row and row["warehouse_id"] is not None else None
+        if not self.is_role_admin:
+            return assigned_id
+
+        selected_raw = session.get("selected_warehouse_id")
+        if selected_raw is not None:
+            try:
+                selected_id = int(selected_raw)
+            except (TypeError, ValueError):
+                selected_id = 0
+            selected = fetchone(
+                self.db,
+                "SELECT id FROM warehouses WHERE id=? AND is_active=1",
+                (selected_id,),
+            )
+            if selected:
+                return int(selected["id"])
+            session.pop("selected_warehouse_id", None)
+
+        if assigned_id is not None:
+            assigned = fetchone(
+                self.db,
+                "SELECT id FROM warehouses WHERE id=? AND is_active=1",
+                (assigned_id,),
+            )
+            if assigned:
+                session["selected_warehouse_id"] = assigned_id
+                return assigned_id
+
+        first = fetchone(
+            self.db,
+            "SELECT id FROM warehouses WHERE is_active=1 ORDER BY name, id LIMIT 1",
+        )
+        if not first:
             return None
-        return int(row["warehouse_id"])
+        warehouse_id = int(first["id"])
+        session["selected_warehouse_id"] = warehouse_id
+        return warehouse_id
+
+    @property
+    def available_warehouses(self) -> list[dict]:
+        if not self.is_role_admin:
+            return []
+        return [
+            dict(row)
+            for row in fetchall(
+                self.db,
+                "SELECT id, name FROM warehouses WHERE is_active=1 ORDER BY name, id",
+            )
+        ]
 
     @property
     def current_warehouse_name(self) -> str | None:
@@ -249,6 +296,7 @@ class FlaskBaseHandler:
         kwargs.setdefault("is_viewer_role", self.is_role_viewer)
         kwargs.setdefault("current_warehouse_id", self.current_warehouse_id)
         kwargs.setdefault("current_warehouse_name", self.current_warehouse_name)
+        kwargs.setdefault("available_warehouses", self.available_warehouses)
         kwargs.setdefault("now_local", _to_local(datetime.utcnow()).strftime("%Y-%m-%dT%H:%M"))
         kwargs.setdefault("fmt_dt", fmt_dt)
         kwargs.setdefault("fmt_money", fmt_money)

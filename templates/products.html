@@ -5,7 +5,10 @@
 
   <div class="card">
     <div class="page-head">
-      <h2>Товары</h2>
+      <div>
+        <h2>Товары</h2>
+        <div class="muted">{{ current_warehouse_name or "Склад не назначен" }}</div>
+      </div>
     </div>
 
     <form method="get" action="/products" style="display:flex; gap:10px; align-items:end; flex-wrap:wrap; margin-bottom:4px;">
@@ -99,12 +102,6 @@
         <label>Мин. остаток</label>
         <input name="min_stock" type="number" step="0.01" min="0" value="{{ f.get('min_stock', 0) }}">
       </div>
-      {% if is_admin_role %}
-      <div>
-        <label>Цена прихода</label>
-        <input name="purchase_price" type="number" step="0.01" min="0" value="{{ f.get('purchase_price', 0) }}">
-      </div>
-      {% endif %}
       <div>
         <label>Цена отпуска</label>
         <input name="sale_price" type="number" step="0.01" min="0" value="{{ f.get('sale_price', 0) }}">
@@ -166,7 +163,6 @@
             </th>
             <th style="width: 7%;">Ед.</th>
             <th class="right" style="width: 8%;">Мин.</th>
-            {% if is_admin_role %}<th class="right">Цена прихода</th>{% endif %}
             <th class="right">Цена отпуска</th>
             <th class="right" style="width: 10%;">
               <a class="sort" href="/products?sort=stock&dir={{ next_dir_stock }}&page=1&per_page={{ per_page }}{{ filter_qs }}">
@@ -192,7 +188,6 @@
             <td class="muted">{{ p["subcategory_name"] or "-" }}</td>
             <td>{{ p["unit"] or "шт" }}</td>
             <td class="right">{{ fmt_qty(p["min_stock"]) }}</td>
-            {% if is_admin_role %}<td class="right">{{ fmt_money(p["purchase_price"], digits=2) }} {{ app_currency }}</td>{% endif %}
             <td class="right">{{ fmt_money(p["sale_price"], digits=2) }} {{ app_currency }}</td>
             <td class="right">
               {% if p["balance"] < p["min_stock"] %}
@@ -213,7 +208,7 @@
           {% endfor %}
           {% if not products %}
           <tr>
-            <td colspan="{{ 11 if is_admin_role else 10 }}" class="muted" style="text-align:center;padding:24px;">Товары не найдены</td>
+            <td colspan="10" class="muted" style="text-align:center;padding:24px;">Товары не найдены</td>
           </tr>
           {% endif %}
         </tbody>
